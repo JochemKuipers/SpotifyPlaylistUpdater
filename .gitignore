@@ -4,3 +4,6 @@
 .python-version
 .venv/
 .cache
+__pycache__/
+spotifyplaylistcreator_cache/
+/spotifyplaylistcleaner.log
