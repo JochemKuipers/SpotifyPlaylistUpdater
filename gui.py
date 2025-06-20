@@ -280,7 +280,7 @@ class SpotifyPlaylistGUI(QMainWindow):
         creds_layout.addRow("Client Secret:", self.client_secret_edit)
 
         self.redirect_uri_edit = QLineEdit()
-        self.redirect_uri_edit.setText("http://localhost:8080/callback")
+        self.redirect_uri_edit.setText("http://127.0.0.1:3000/callback")
         creds_layout.addRow("Redirect URI:", self.redirect_uri_edit)
 
         creds_group.setLayout(creds_layout)
@@ -420,7 +420,7 @@ class SpotifyPlaylistGUI(QMainWindow):
                     self.client_id_edit.setText(creds.get("client_id", ""))
                     self.client_secret_edit.setText(creds.get("client_secret", ""))
                     self.redirect_uri_edit.setText(
-                        creds.get("redirect_uri", "http://localhost:8080/callback")
+                        creds.get("redirect_uri", "http://127.0.0.1:3000/callback")
                     )
         except Exception as e:
             print(f"Error loading credentials: {e}")

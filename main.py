@@ -1108,8 +1108,8 @@ def main():
     parser.add_argument("--client-secret", required=True, help="Spotify Client Secret")
     parser.add_argument(
         "--redirect-uri",
-        default="http://localhost:8080/callback",
-        help="Redirect URI (default: http://localhost:8080/callback)",
+        default="http://127.0.0.1:3000/callback",
+        help="Redirect URI (default: http://127.0.0.1:3000/callback)",
     )
     parser.add_argument(
         "--list-playlists", action="store_true", help="Just list all playlists and exit"
