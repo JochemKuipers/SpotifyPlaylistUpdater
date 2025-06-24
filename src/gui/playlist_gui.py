@@ -467,7 +467,10 @@ class SpotifyPlaylistGUI(QMainWindow):
                 "redirect_uri": self.redirect_uri_edit.text(),
             }
             credentials_path = get_credentials_path()
-            with open(credentials_path) as f:
+            # Make sure the directory exists
+            os.makedirs(os.path.dirname(credentials_path), exist_ok=True)
+            # Open the file in write mode
+            with open(credentials_path, "w") as f:
                 json.dump(creds, f)
 
             QMessageBox.information(self, "Success", "Credentials saved successfully!")
