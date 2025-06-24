@@ -198,4 +198,4 @@ jobs:
             2. For macOS/Linux: Make executable with `chmod +x SpotifyPlaylistUpdater` (Linux only)
             3. Run the application
             
-            For detailed instructions, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md)
+            For detailed instructions, see the [README](https://github.com/${{ github.repository }}/blob/master/README.md)
