@@ -63,25 +63,19 @@ jobs:
 
       - name: Build with PyInstaller (Windows/Linux)
         if: matrix.os != 'macos-latest'
+        shell: ${{ matrix.os == 'windows-latest' && 'pwsh' || 'bash' }}
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          if ('${{ matrix.os }}' -eq 'windows-latest') {
             # Create a modified spec file for Windows to include the missing DLLs
-            cp spotifyplaylistupdater.spec spotifyplaylistupdater_win.spec
+            Copy-Item spotifyplaylistupdater.spec -Destination spotifyplaylistupdater_win.spec
             # Add the DLLs to the binaries section in the spec file
-            python -c "
-            with open('spotifyplaylistupdater_win.spec', 'r') as file:
-                content = file.read()
-          
-            # Add windows_dlls to binaries
-            content = content.replace('binaries=[]', 'binaries=[(\"windows_dlls/api-ms-win-core-path-l1-1-0.dll\", \".\"), (\"windows_dlls/api-ms-win-core-winrt-l1-1-0.dll\", \".\"), (\"windows_dlls/api-ms-win-shcore-scaling-l1-1-1.dll\", \".\"), (\"windows_dlls/api-ms-win-core-winrt-string-l1-1-0.dll\", \".\")] if os.path.exists(\"windows_dlls\") and os.listdir(\"windows_dlls\") else []')
-          
-            with open('spotifyplaylistupdater_win.spec', 'w') as file:
-                file.write(content)
-            "
+            $content = Get-Content -Path spotifyplaylistupdater_win.spec -Raw
+            $content = $content -replace 'binaries=\[\]', 'binaries=[("windows_dlls/api-ms-win-core-path-l1-1-0.dll", "."), ("windows_dlls/api-ms-win-core-winrt-l1-1-0.dll", "."), ("windows_dlls/api-ms-win-shcore-scaling-l1-1-1.dll", "."), ("windows_dlls/api-ms-win-core-winrt-string-l1-1-0.dll", ".")] if os.path.exists("windows_dlls") and os.listdir("windows_dlls") else []'
+            Set-Content -Path spotifyplaylistupdater_win.spec -Value $content
             pyinstaller spotifyplaylistupdater_win.spec
-          else
+          } else {
             pyinstaller spotifyplaylistupdater.spec
-          fi
+          }
 
       - name: Create macOS spec file
         if: matrix.os == 'macos-latest'
