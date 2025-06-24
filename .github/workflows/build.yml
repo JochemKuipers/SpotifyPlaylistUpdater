@@ -49,29 +49,11 @@ jobs:
             libxcb-render-util0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-shape0 libxcb-cursor0 libxcb-xinerama0 libxcb-xkb1
 
-      - name: Prepare Windows DLLs
-        if: matrix.os == 'windows-latest'
-        run: |
-          pip install delvewheel
-          mkdir -p windows_dlls
-          $systemRoot = $env:SystemRoot
-          Copy-Item "$systemRoot\System32\api-ms-win-core-path-l1-1-0.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
-          Copy-Item "$systemRoot\System32\api-ms-win-core-winrt-l1-1-0.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
-          Copy-Item "$systemRoot\System32\api-ms-win-shcore-scaling-l1-1-1.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
-          Copy-Item "$systemRoot\System32\api-ms-win-core-winrt-string-l1-1-0.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
-          Get-ChildItem windows_dlls
-
       - name: Build with PyInstaller (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          # Create a modified spec file for Windows to include the missing DLLs
-          Copy-Item spotifyplaylistupdater.spec -Destination spotifyplaylistupdater_win.spec
-          # Add the DLLs to the binaries section in the spec file
-          $content = Get-Content -Path spotifyplaylistupdater_win.spec -Raw
-          $content = $content -replace 'binaries=\[\]', 'binaries=[("windows_dlls/api-ms-win-core-path-l1-1-0.dll", "."), ("windows_dlls/api-ms-win-core-winrt-l1-1-0.dll", "."), ("windows_dlls/api-ms-win-shcore-scaling-l1-1-1.dll", "."), ("windows_dlls/api-ms-win-core-winrt-string-l1-1-0.dll", ".")] if os.path.exists("windows_dlls") and os.listdir("windows_dlls") else []'
-          Set-Content -Path spotifyplaylistupdater_win.spec -Value $content
-          pyinstaller spotifyplaylistupdater_win.spec
+          pyinstaller spotifyplaylistupdater.spec
 
       - name: Create macOS spec file
         if: matrix.os == 'macos-latest'
