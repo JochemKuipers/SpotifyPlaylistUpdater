@@ -9,6 +9,8 @@ jobs:
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +39,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install -r requirements.txt
+          pip install pillow  # Add Pillow for icon conversion
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
