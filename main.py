@@ -18,7 +18,7 @@ def clean_name(song_name):
         # Remove featuring artists in parentheses or brackets that contain feat/with
         # This regex looks for parentheses/brackets that specifically contain feat/with
         song_name = re.sub(
-            r"[\[(]\s*(feat\.?|with\.?)[^\])\}]*[\])\}]",
+            r"[\[(]\s*(feat\.?|with\.?)[^])}]*[])}]",
             "",
             song_name,
             flags=re.IGNORECASE,
@@ -82,6 +82,19 @@ def split_artists(artists):
     if len(artists) == 1:
         return tuple(artists[0].split(", "))
     return tuple(artists)
+
+
+def is_track_match(track1: Dict, track2: Dict) -> bool:
+    """Check if two tracks are the same based on name and duration tolerance only"""
+    # Compare cleaned names (case insensitive)
+    name_match = track1["name"].lower() == track2["name"].lower()
+
+    # Compare durations with 5-second tolerance
+    duration_match = is_duration_within_range(
+        track1["duration"], track2["duration"], 5
+    )
+
+    return name_match and duration_match
 
 
 class SpotifyPlaylistUpdater:
@@ -271,7 +284,7 @@ class SpotifyPlaylistUpdater:
             # Show playlists that might be similar
             for playlist in playlists[:10]:  # Show first 10 as suggestions
                 print(f"  - '{playlist['name']}'")
-            return None
+            return {}
 
     def get_playlist_tracks(self, playlist_name: str) -> List[Dict]:
         """Get all track details from a playlist by name using caching"""
@@ -394,18 +407,6 @@ class SpotifyPlaylistUpdater:
             logger.error(f"Error getting playlist tracks: {e}")
             raise e
 
-    def is_track_match(self, track1: Dict, track2: Dict) -> bool:
-        """Check if two tracks are the same based on name and duration tolerance only"""
-        # Compare cleaned names (case insensitive)
-        name_match = track1["name"].lower() == track2["name"].lower()
-
-        # Compare durations with 5-second tolerance
-        duration_match = is_duration_within_range(
-            track1["duration"], track2["duration"], 5
-        )
-
-        return name_match and duration_match
-
     def find_missing_tracks(self, artist_name: str, playlist_name: str) -> List[Dict]:
         """Compare artist discography with playlist and find missing tracks"""
         playlist_tracks = self.get_playlist_tracks(playlist_name)
@@ -431,7 +432,7 @@ class SpotifyPlaylistUpdater:
             is_missing = True
 
             for playlist_track in playlist_tracks:
-                if self.is_track_match(artist_track, playlist_track):
+                if is_track_match(artist_track, playlist_track):
                     is_missing = False
                     break
 
@@ -447,7 +448,7 @@ class SpotifyPlaylistUpdater:
         for track in missing_tracks:
             is_duplicate = False
             for existing in unique_missing:
-                if self.is_track_match(track, existing):
+                if is_track_match(track, existing):
                     is_duplicate = True
                     break
             if not is_duplicate:
@@ -558,9 +559,9 @@ class SpotifyPlaylistUpdater:
                                     "main_artist": full_track["artists"][0]["name"],
                                 }
                             )
-                    except Exception:
+                    except Exception as track_error:
                         logger.error(
-                            f"Error processing individual track {track_id}: track_error"
+                            f"Error processing individual track {track_id}: {track_error}"
                         )
                         continue
 
@@ -865,7 +866,7 @@ class SpotifyPlaylistUpdater:
             for track in all_tracks:
                 is_duplicate = False
                 for existing in unique_tracks:
-                    if self.is_track_match(track, existing):
+                    if is_track_match(track, existing):
                         is_duplicate = True
                         break
                 if not is_duplicate:
@@ -1010,7 +1011,7 @@ class SpotifyPlaylistUpdater:
         for artist_track in artist_tracks:
             is_missing = True
             for playlist_track in playlist_tracks:
-                if self.is_track_match(artist_track, playlist_track):
+                if is_track_match(artist_track, playlist_track):
                     is_missing = False
                     break
             if is_missing:
@@ -1021,7 +1022,7 @@ class SpotifyPlaylistUpdater:
         for track in missing_tracks:
             is_duplicate = False
             for existing in unique_missing:
-                if self.is_track_match(track, existing):
+                if is_track_match(track, existing):
                     is_duplicate = True
                     break
             if not is_duplicate:

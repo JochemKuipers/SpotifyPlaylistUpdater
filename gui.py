@@ -1,6 +1,6 @@
 import sys
 import os
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QWidget,
@@ -18,8 +18,8 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QCompleter,
 )
-from PyQt6.QtCore import QThread, pyqtSignal, Qt
-from PyQt6.QtGui import QFont
+from PySide6.QtCore import QThread, Signal, Qt, QTimer
+from PySide6.QtGui import QFont
 import json
 
 
@@ -71,8 +71,8 @@ class SpotifyManager:
 class PlaylistFetcher(QThread):
     """Worker thread to fetch playlists on startup"""
 
-    playlists_fetched = pyqtSignal(list)
-    error = pyqtSignal(str)
+    playlists_fetched: Signal = Signal(list)
+    error: Signal = Signal(str)
 
     def __init__(self, client_id, client_secret, redirect_uri):
         super().__init__()
@@ -103,11 +103,11 @@ class PlaylistFetcher(QThread):
 class SpotifyWorker(QThread):
     """Worker thread for Spotify operations to prevent GUI freezing"""
 
-    progress_update = pyqtSignal(str)
-    finished = pyqtSignal(dict)
-    error = pyqtSignal(str)
-    tracks_added = pyqtSignal(bool, str)
-    tracks_removed = pyqtSignal(bool, str)
+    progress_update = Signal(str)
+    finished = Signal(dict)
+    error = Signal(str)
+    tracks_added = Signal(bool, str)
+    tracks_removed = Signal(bool, str)
 
     def __init__(
         self,
@@ -207,6 +207,24 @@ class SpotifyWorker(QThread):
 class SpotifyPlaylistGUI(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.individual_action_button = None
+        self.remove_tracks_button = None
+        self.extra_list = None
+        self.add_tracks_button = None
+        self.status_label = None
+        self.missing_list = None
+        self.progress_bar = None
+        self.analyze_button = None
+        self.save_creds_button = None
+        self.refresh_playlists_button = None
+        self.playlist_name_edit = None
+        self.redirect_uri_edit = None
+        self.client_secret_edit = None
+        self.client_id_edit = None
+        self.details_text = None
+        self._creds_timer = None
+        self.selected_track_indices = None
+        self.current_selection = None
         self.worker = None
         self.playlist_fetcher = None
         self.missing_tracks_data = []
@@ -444,15 +462,13 @@ class SpotifyPlaylistGUI(QMainWindow):
     def on_credentials_changed(self):
         """Called when credentials are changed to refresh playlists"""
         # Cancel any pending timer
-        if hasattr(self, "_creds_timer"):
+        if hasattr(self, "_creds_timer") and self._creds_timer is not None:
             self._creds_timer.stop()
 
         # Stop any running playlist fetcher
         if self.playlist_fetcher and self.playlist_fetcher.isRunning():
             self.playlist_fetcher.terminate()
             self.playlist_fetcher.wait(1000)
-
-        from PyQt6.QtCore import QTimer
 
         self._creds_timer = QTimer()
         self._creds_timer.setSingleShot(True)
