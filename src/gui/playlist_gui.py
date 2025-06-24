@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.spotify_api.spotify_client import SpotifyPlaylistUpdater
+from src.utils.app_paths import get_credentials_path
 
 
 class SpotifyManager:
@@ -445,8 +446,9 @@ class SpotifyPlaylistGUI(QMainWindow):
     def load_credentials(self):
         """Load saved credentials if they exist"""
         try:
-            if os.path.exists("credentials.json"):
-                with open("credentials.json", "r") as f:
+            credentials_path = get_credentials_path()
+            if os.path.exists(credentials_path):
+                with open(credentials_path) as f:
                     creds = json.load(f)
                     self.client_id_edit.setText(creds.get("client_id", ""))
                     self.client_secret_edit.setText(creds.get("client_secret", ""))
@@ -464,7 +466,8 @@ class SpotifyPlaylistGUI(QMainWindow):
                 "client_secret": self.client_secret_edit.text(),
                 "redirect_uri": self.redirect_uri_edit.text(),
             }
-            with open("credentials.json") as f:
+            credentials_path = get_credentials_path()
+            with open(credentials_path) as f:
                 json.dump(creds, f)
 
             QMessageBox.information(self, "Success", "Credentials saved successfully!")

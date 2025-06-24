@@ -16,6 +16,7 @@ from src.utils.track_utils import (
     format_duration,
     is_track_match,
 )
+from src.utils.app_paths import get_cache_dir
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -26,12 +27,17 @@ class SpotifyPlaylistUpdater:
         """Initialize Spotify client with OAuth"""
         scope = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-read-private user-read-email"
 
+        # Set up cache file path in app data directory
+        cache_dir = get_cache_dir()
+        cache_path = cache_dir / ".spotify_cache"
+
         self.sp = spotipy.Spotify(
             auth_manager=SpotifyOAuth(
                 client_id=client_id,
                 client_secret=client_secret,
                 redirect_uri=redirect_uri,
                 scope=scope,
+                cache_path=str(cache_path),
             )
         )
 
