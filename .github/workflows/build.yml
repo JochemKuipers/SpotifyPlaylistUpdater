@@ -48,20 +48,71 @@ jobs:
         if: matrix.os != 'macos-latest'
         run: pyinstaller spotifyplaylistupdater.spec
 
-      - name: Build with PyInstaller (macOS)
+      - name: Create macOS spec file
         if: matrix.os == 'macos-latest'
         run: |
-          # Modify spec file for macOS to create app bundle
-          python -c "
-          with open('spotifyplaylistupdater.spec', 'r') as f:
-              content = f.read()
-          content = content.replace('exe = EXE(', 'app = BUNDLE(exe,')
-          content = content.replace(')',', info_plist={\"NSHighResolutionCapable\": \"True\"}, bundle_identifier=\"com.spotifyplaylistupdater\")')
-          content = content.replace('exe = EXE', 'exe = EXE')
-          with open('spotifyplaylistupdater_mac.spec', 'w') as f:
-              f.write(content)
-          "
-          pyinstaller spotifyplaylistupdater_mac.spec
+          cat > spotifyplaylistupdater_mac.spec << 'EOF'
+          # -*- mode: python ; coding: utf-8 -*-
+          block_cipher = None
+
+          a = Analysis(
+              ['main_app.py'],
+              pathex=[],
+              binaries=[],
+              datas=[('.')],
+              hiddenimports=['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets'],
+              hookspath=[],
+              runtime_hooks=[],
+              excludes=[],
+              win_no_prefer_redirects=False,
+              win_private_assemblies=False,
+              cipher=block_cipher,
+              noarchive=False,
+          )
+
+          pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+          exe = EXE(
+              pyz,
+              a.scripts,
+              [],
+              exclude_binaries=True,
+              name='SpotifyPlaylistUpdater',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              console=False,
+              icon='src/assets/icon.ico',
+          )
+
+          coll = COLLECT(
+              exe,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              strip=False,
+              upx=True,
+              upx_exclude=[],
+              name='SpotifyPlaylistUpdater',
+          )
+
+          app = BUNDLE(
+              coll,
+              name='SpotifyPlaylistUpdater.app',
+              icon='src/assets/icon.ico',
+              bundle_identifier='com.spotifyplaylistupdater',
+              info_plist={
+                  'NSHighResolutionCapable': True,
+                  'NSPrincipalClass': 'NSApplication',
+                  'CFBundleShortVersionString': '1.0.0',
+              },
+          )
+          EOF
+
+      - name: Build with PyInstaller (macOS)
+        if: matrix.os == 'macos-latest'
+        run: pyinstaller spotifyplaylistupdater_mac.spec
 
       - name: Upload Windows artifact
         if: matrix.os == 'windows-latest'
