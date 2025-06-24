@@ -45,11 +45,43 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1 libegl1 libxrandr2 libxss1 libxcursor1 libxcomposite1 libxi6 libxtst6 libxkbcommon-x11-0
+          sudo apt-get install -y libgl1 libegl1 libxrandr2 libxss1 libxcursor1 libxcomposite1 libxi6 libxtst6 libxkbcommon-x11-0 \
+            libxcb-render-util0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-shape0 libxcb-cursor0 libxcb-xinerama0 libxcb-xkb1
+
+      - name: Prepare Windows DLLs
+        if: matrix.os == 'windows-latest'
+        run: |
+          pip install delvewheel
+          mkdir -p windows_dlls
+          $systemRoot = $env:SystemRoot
+          Copy-Item "$systemRoot\System32\api-ms-win-core-path-l1-1-0.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
+          Copy-Item "$systemRoot\System32\api-ms-win-core-winrt-l1-1-0.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
+          Copy-Item "$systemRoot\System32\api-ms-win-shcore-scaling-l1-1-1.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
+          Copy-Item "$systemRoot\System32\api-ms-win-core-winrt-string-l1-1-0.dll" -Destination windows_dlls -ErrorAction SilentlyContinue
+          Get-ChildItem windows_dlls
 
       - name: Build with PyInstaller (Windows/Linux)
         if: matrix.os != 'macos-latest'
-        run: pyinstaller spotifyplaylistupdater.spec
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # Create a modified spec file for Windows to include the missing DLLs
+            cp spotifyplaylistupdater.spec spotifyplaylistupdater_win.spec
+            # Add the DLLs to the binaries section in the spec file
+            python -c "
+            with open('spotifyplaylistupdater_win.spec', 'r') as file:
+                content = file.read()
+          
+            # Add windows_dlls to binaries
+            content = content.replace('binaries=[]', 'binaries=[(\"windows_dlls/api-ms-win-core-path-l1-1-0.dll\", \".\"), (\"windows_dlls/api-ms-win-core-winrt-l1-1-0.dll\", \".\"), (\"windows_dlls/api-ms-win-shcore-scaling-l1-1-1.dll\", \".\"), (\"windows_dlls/api-ms-win-core-winrt-string-l1-1-0.dll\", \".\")] if os.path.exists(\"windows_dlls\") and os.listdir(\"windows_dlls\") else []')
+          
+            with open('spotifyplaylistupdater_win.spec', 'w') as file:
+                file.write(content)
+            "
+            pyinstaller spotifyplaylistupdater_win.spec
+          else
+            pyinstaller spotifyplaylistupdater.spec
+          fi
 
       - name: Create macOS spec file
         if: matrix.os == 'macos-latest'
@@ -137,9 +169,28 @@ jobs:
           name: ${{ matrix.asset_name }}
           path: dist/SpotifyPlaylistUpdater.app
 
+      - name: Create DMG for macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Install create-dmg
+          brew install create-dmg
+          
+          # Create DMG from the app bundle
+          create-dmg \
+            --volname "SpotifyPlaylistUpdater" \
+            --volicon "src/assets/icon.ico" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "SpotifyPlaylistUpdater.app" 200 190 \
+            --hide-extension "SpotifyPlaylistUpdater.app" \
+            --app-drop-link 600 185 \
+            "dist/SpotifyPlaylistUpdater.dmg" \
+            "dist/SpotifyPlaylistUpdater.app"
+
       - name: Attach artifacts to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/${{ matrix.output_name }}
+            ${{ matrix.os == 'windows-latest' && 'dist/SpotifyPlaylistUpdater.exe' || matrix.os == 'ubuntu-latest' && 'dist/SpotifyPlaylistUpdater' || 'dist/SpotifyPlaylistUpdater.dmg' }}
           token: ${{ secrets.GITHUB_TOKEN }}
