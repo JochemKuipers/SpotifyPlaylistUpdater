@@ -100,7 +100,7 @@ def is_track_match(track1: Dict, track2: Dict) -> bool:
 class SpotifyPlaylistUpdater:
     def __init__(self, client_id: str, client_secret: str, redirect_uri: str):
         """Initialize Spotify client with OAuth"""
-        scope = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public"
+        scope = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-read-private user-read-email"
 
         self.sp = spotipy.Spotify(
             auth_manager=SpotifyOAuth(

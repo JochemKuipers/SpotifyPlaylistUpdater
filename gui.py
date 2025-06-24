@@ -244,12 +244,14 @@ class SpotifyPlaylistGUI(QMainWindow):
         try:
             # Stop any running workers
             if self.worker and self.worker.isRunning():
-                self.worker.terminate()
-                self.worker.wait(3000)
+                self.worker.requestInterruption()
+                if not self.worker.wait(1000):
+                    self.worker.terminate()
 
             if self.playlist_fetcher and self.playlist_fetcher.isRunning():
-                self.playlist_fetcher.terminate()
-                self.playlist_fetcher.wait(3000)
+                self.playlist_fetcher.requestInterruption()
+                if not self.playlist_fetcher.wait(1000):
+                    self.playlist_fetcher.terminate()
 
             # Clean up Spotify manager
             self.spotify_manager.cleanup()
@@ -494,13 +496,9 @@ class SpotifyPlaylistGUI(QMainWindow):
             self.redirect_uri_edit.text(),
         )
 
-        self.playlist_fetcher.playlists_fetched.connect(
-            self.setup_playlist_autocomplete
-        )
+        self.playlist_fetcher.playlists_fetched.connect(self.setup_playlist_autocomplete)
         self.playlist_fetcher.error.connect(self.playlist_fetch_error)
-        self.playlist_fetcher.finished.connect(
-            lambda: setattr(self.playlist_fetcher, "deleteLater", lambda: None)
-        )
+        # Remove the problematic connection and let Qt handle object lifecycle
         self.playlist_fetcher.start()
 
     def setup_playlist_autocomplete(self, playlist_names):
