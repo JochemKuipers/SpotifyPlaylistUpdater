@@ -42,7 +42,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-glx libegl1-mesa libxrandr2 libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 libxi6 libxtst6 libxkbcommon-x11-0
+          sudo apt-get install -y libgl1 libegl1 libxrandr2 libxss1 libxcursor1 libxcomposite1 libxi6 libxtst6 libxkbcommon-x11-0
 
       - name: Build with PyInstaller (Windows/Linux)
         if: matrix.os != 'macos-latest'
@@ -59,7 +59,6 @@ jobs:
               ['main_app.py'],
               pathex=[],
               binaries=[],
-              datas=[('.')],
               hiddenimports=['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets'],
               hookspath=[],
               runtime_hooks=[],

@@ -5,7 +5,6 @@ a = Analysis(
     ['main_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('.')],
     hiddenimports=['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets'],
     hookspath=[],
     runtime_hooks=[],
