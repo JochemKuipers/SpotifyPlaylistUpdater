@@ -1,33 +1,39 @@
-name: Build SpotifyPlaylistUpdater
+name: Build and Publish
 
 on:
-  release:
-    types: [ published ]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:  # Allows manual triggering
+
+# Add explicit permissions block for the GITHUB_TOKEN
+permissions:
+  contents: write  # Required for creating releases and uploading artifacts
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     strategy:
-      fail-fast: false
       matrix:
         os: [ windows-latest, macos-latest, ubuntu-latest ]
         include:
           - os: windows-latest
-            output_name: SpotifyPlaylistUpdater.exe
-            asset_name: SpotifyPlaylistUpdater-Windows.exe
+            platform: win-x64
+            extension: .exe
+            artifact_name: SpotifyPlaylistUpdater-Windows
           - os: macos-latest
-            output_name: SpotifyPlaylistUpdater
-            asset_name: SpotifyPlaylistUpdater-macOS
+            platform: osx-x64
+            extension: .dmg
+            artifact_name: SpotifyPlaylistUpdater-macOS
           - os: ubuntu-latest
-            output_name: SpotifyPlaylistUpdater
-            asset_name: SpotifyPlaylistUpdater-Linux
+            platform: linux-x64
+            extension: ''
+            artifact_name: SpotifyPlaylistUpdater-Linux
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -126,27 +132,6 @@ jobs:
         run: |
           pyinstaller spotifyplaylistupdater.spec
 
-      - name: Upload Windows artifact
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.asset_name }}
-          path: dist/SpotifyPlaylistUpdater.exe
-
-      - name: Upload Linux artifact
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.asset_name }}
-          path: dist/SpotifyPlaylistUpdater
-
-      - name: Upload macOS artifact
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.asset_name }}
-          path: dist/SpotifyPlaylistUpdater.app
-
       - name: Create DMG for macOS
         if: matrix.os == 'macos-latest'
         run: |
@@ -166,9 +151,51 @@ jobs:
             "dist/SpotifyPlaylistUpdater.dmg" \
             "dist/SpotifyPlaylistUpdater.app"
 
-      - name: Attach artifacts to release
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4.6.2
         with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            ${{ matrix.os == 'windows-latest' && 'dist/SpotifyPlaylistUpdater.exe' || matrix.os == 'macos-latest' && 'dist/SpotifyPlaylistUpdater.dmg' || 'dist/SpotifyPlaylistUpdater' }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          name: Spotify Playlist Updater v${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
           files: |
-            ${{ matrix.os == 'windows-latest' && 'dist/SpotifyPlaylistUpdater.exe' || matrix.os == 'ubuntu-latest' && 'dist/SpotifyPlaylistUpdater' || 'dist/SpotifyPlaylistUpdater.dmg' }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+            artifacts/SpotifyPlaylistUpdater-Windows/*
+            artifacts/SpotifyPlaylistUpdater-macOS/*
+            artifacts/SpotifyPlaylistUpdater-Linux/*
+          body: |
+            # Spotify Playlist Updater ${{ steps.get_version.outputs.VERSION }}
+            
+            ## Downloads
+            - [Windows](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/SpotifyPlaylistUpdater.exe)
+            - [macOS](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/SpotifyPlaylistUpdater.dmg)
+            - [Linux](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.VERSION }}/SpotifyPlaylistUpdater)
+            
+            ## Installation
+            1. Download the appropriate file for your platform
+            2. For macOS/Linux: Make executable with `chmod +x SpotifyPlaylistUpdater` (Linux only)
+            3. Run the application
+            
+            For detailed instructions, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md)
