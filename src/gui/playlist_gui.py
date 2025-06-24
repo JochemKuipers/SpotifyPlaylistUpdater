@@ -1,7 +1,12 @@
-import sys
+"""
+GUI module for Spotify Playlist Updater.
+"""
+import json
 import os
+
+from PySide6.QtCore import QThread, Signal, Qt, QTimer
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -18,9 +23,8 @@ from PySide6.QtWidgets import (
     QSplitter,
     QCompleter,
 )
-from PySide6.QtCore import QThread, Signal, Qt, QTimer
-from PySide6.QtGui import QFont
-import json
+
+from src.spotify_api.spotify_client import SpotifyPlaylistUpdater
 
 
 class SpotifyManager:
@@ -47,8 +51,6 @@ class SpotifyManager:
                     self._client._cleanup()
                 except Exception as e:
                     print(f"Error cleaning up old client: {e}")
-
-            from main import SpotifyPlaylistUpdater
 
             self._client = SpotifyPlaylistUpdater(
                 client_id, client_secret, redirect_uri
@@ -110,15 +112,15 @@ class SpotifyWorker(QThread):
     tracks_removed = Signal(bool, str)
 
     def __init__(
-        self,
-        client_id,
-        client_secret,
-        redirect_uri,
-        artist_name,
-        playlist_name,
-        operation="analyze",
-        tracks_to_add=None,
-        tracks_to_remove=None,
+            self,
+            client_id,
+            client_secret,
+            redirect_uri,
+            artist_name,
+            playlist_name,
+            operation="analyze",
+            tracks_to_add=None,
+            tracks_to_remove=None,
     ):
         super().__init__()
         self.client_id = client_id
@@ -534,11 +536,11 @@ class SpotifyPlaylistGUI(QMainWindow):
     def analyze_playlist(self):
         """Start the playlist analysis"""
         if not all(
-            [
-                self.client_id_edit.text(),
-                self.client_secret_edit.text(),
-                self.playlist_name_edit.text(),
-            ]
+                [
+                    self.client_id_edit.text(),
+                    self.client_secret_edit.text(),
+                    self.playlist_name_edit.text(),
+                ]
         ):
             QMessageBox.warning(self, "Warning", "Please fill in all required fields!")
             return
@@ -654,12 +656,12 @@ class SpotifyPlaylistGUI(QMainWindow):
                 details = f"""
 MISSING TRACK DETAILS:
 
-Track Name: {track["name"]}
-Duration: {track["duration"]}
-Artists: {", ".join(track["artists"])}
-Album: {track["album"]}
-Release Date: {track["release_date"]}
-Spotify URI: {track["uri"]}
+Track Name: {track.get("name", "Unknown Track")}
+Duration: {track.get("duration", "Unknown Duration")}
+Artists: {", ".join(track.get("artists", ["Unknown Artist"]))}
+Album: {track.get("album", "Unknown Album")}
+Release Date: {track.get("release_date", "Unknown Release Date")}
+Spotify URI: {track.get("uri", "Unknown URI")}
 
 Click the button below to add this track to your playlist.
                 """.strip()
@@ -667,11 +669,11 @@ Click the button below to add this track to your playlist.
                 details = f"""
 NON-ARTIST TRACK DETAILS:
 
-Track Name: {track["name"]}
-Duration: {track["duration"]}
-Main Artist: {track["main_artist"]}
-All Artists: {", ".join(track["artists"])}
-Spotify URI: {track["uri"]}
+Track Name: {track.get("name", "Unknown Track")}
+Duration: {track.get("duration", "Unknown Duration")}
+Main Artist: {track.get("main_artist", "Unknown Artist")}
+All Artists: {", ".join(track.get("artists", ["Unknown Artist"]))}
+Spotify URI: {track.get("uri", "Unknown URI")}
 
 This track is in your playlist but is not by the target artist.
 Click the button below to remove this track from your playlist.
@@ -684,7 +686,7 @@ SELECTED MISSING TRACKS ({len(tracks)} tracks):
 
 """
                 for i, track in enumerate(tracks, 1):
-                    details += f"{i}. {track['name']} ({track['duration']}) - {track['album']}\n"
+                    details += f"{i}. {track.get("name", "Unknown Track")} ({track.get("duration", "Unknown Duration")}) - {track.get("album", "Unknown Album")}\n"
 
                 details += f"\nClick the button below to add all {len(tracks)} tracks to your playlist."
             else:
@@ -693,7 +695,7 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
 
 """
                 for i, track in enumerate(tracks, 1):
-                    details += f"{i}. {track['name']} ({track['duration']}) by {track['main_artist']}\n"
+                    details += f"{i}. {track.get("name", "Unknown Track")} ({track.get("duration", "Unknown Duration")}) by {track.get("main_artist", "Unknown Artist")}\n"
 
                 details += f"\nClick the button below to remove all {len(tracks)} tracks from your playlist."
 
@@ -724,7 +726,7 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
             return
 
         # Confirm with user
-        track_names = [track["name"] for track in selected_tracks]
+        track_names = [track.get("name", "Unknown Track") for track in selected_tracks]
         if len(selected_tracks) == 1:
             message = f"Are you sure you want to add '{track_names[0]}' to the playlist '{self.playlist_name_edit.text()}'?"
         else:
@@ -781,7 +783,8 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
 
         # Confirm with user
         track_names = [
-            f"{track['name']} by {track['main_artist']}" for track in selected_tracks
+            f"{track.get("name", "Unknown Track")} by {track.get("main_artist", "Unknown Artist")}" for track in
+            selected_tracks
         ]
         if len(selected_tracks) == 1:
             message = f"Are you sure you want to remove '{track_names[0]}' from the playlist '{self.playlist_name_edit.text()}'?\n\nThis action cannot be undone."
@@ -1114,16 +1117,3 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
         self.individual_action_button.setEnabled(False)
         self.status_label.setText("❌ Operation failed")
         QMessageBox.critical(self, "Error", error_message)
-
-
-def main():
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    window = SpotifyPlaylistGUI()
-    window.show()
-    app.aboutToQuit.connect(window.cleanup_resources)
-    sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    main()

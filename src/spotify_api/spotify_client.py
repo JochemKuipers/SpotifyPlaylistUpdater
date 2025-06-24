@@ -1,100 +1,23 @@
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
-import argparse
-import sys
-import re
-import logging
-from typing import List, Dict
+"""
+Core Spotify API functionality for the Spotify Playlist Updater.
+"""
 import atexit
 import concurrent.futures
+import logging
 from math import ceil
+from typing import List, Dict
+
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+
+from src.utils.track_utils import (
+    clean_name,
+    format_duration,
+    is_track_match,
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
-
-def clean_name(song_name):
-    try:
-        # Remove featuring artists in parentheses or brackets that contain feat/with
-        # This regex looks for parentheses/brackets that specifically contain feat/with
-        song_name = re.sub(
-            r"[\[(]\s*(feat\.?|with\.?)[^])}]*[])}]",
-            "",
-            song_name,
-            flags=re.IGNORECASE,
-        ).strip()
-
-        # Remove featuring artists after "feat." or "with." (anywhere in the string)
-        song_name = re.sub(
-            r"\s*(feat\.|with\.)\s.*$", "", song_name, flags=re.IGNORECASE
-        ).strip()
-
-        # Remove featuring artists after " - " followed by "with" or "feat"
-        song_name = re.sub(
-            r"\s*-\s*(with\s|feat\.?\s).*$", "", song_name, flags=re.IGNORECASE
-        ).strip()
-
-        # Remove standalone " - " at the end (like "$$$ - ")
-        song_name = re.sub(r"\s*-\s*$", "", song_name).strip()
-
-        # Remove trailing dashes, hyphens, and extra whitespace
-        song_name = re.sub(r"[\s\-–—]+$", "", song_name).strip()
-
-        # Also remove leading dashes that might be left
-        song_name = re.sub(r"^[\s\-–—]+", "", song_name).strip()
-
-    except Exception as e:
-        logger.error(f"Error cleaning name: {e}")
-        raise e
-    return song_name
-
-
-def format_duration(duration_ms):
-    try:
-        if type(duration_ms) is not int:
-            return duration_ms
-        duration = duration_ms / 1000
-        minutes = int(duration / 60)
-        seconds = int(duration % 60)
-    except Exception as e:
-        logger.error(f"Error formatting duration: {e}")
-        raise e
-    return f"{minutes}:{seconds:02d}"
-
-
-def is_duration_within_range(duration1, duration2, range_seconds=5):
-    def duration_to_seconds(duration):
-        minutes, seconds = map(int, duration.split(":"))
-        return minutes * 60 + seconds
-
-    try:
-        duration1_seconds = duration_to_seconds(duration1)
-        duration2_seconds = duration_to_seconds(duration2)
-        return abs(duration1_seconds - duration2_seconds) <= range_seconds
-    except Exception as e:
-        logger.error(f"Error comparing durations: {e}")
-        return False
-
-
-def split_artists(artists):
-    if not artists:
-        return None
-    if len(artists) == 1:
-        return tuple(artists[0].split(", "))
-    return tuple(artists)
-
-
-def is_track_match(track1: Dict, track2: Dict) -> bool:
-    """Check if two tracks are the same based on name and duration tolerance only"""
-    # Compare cleaned names (case insensitive)
-    name_match = track1["name"].lower() == track2["name"].lower()
-
-    # Compare durations with 5-second tolerance
-    duration_match = is_duration_within_range(
-        track1["duration"], track2["duration"], 5
-    )
-
-    return name_match and duration_match
 
 
 class SpotifyPlaylistUpdater:
@@ -212,7 +135,7 @@ class SpotifyPlaylistUpdater:
                 # Process remaining chunks in parallel
                 offsets = range(50, total, chunk_size)
                 with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=3
+                        max_workers=3
                 ) as executor:  # Reduced workers
                     futures = [
                         executor.submit(process_playlist_chunk, offset)
@@ -380,7 +303,7 @@ class SpotifyPlaylistUpdater:
                 # Process remaining chunks in parallel
                 offsets = range(100, total, chunk_size)
                 with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=3
+                        max_workers=3
                 ) as executor:  # Reduced workers
                     futures = [
                         executor.submit(process_track_chunk, offset)
@@ -466,7 +389,7 @@ class SpotifyPlaylistUpdater:
         return unique_missing
 
     def find_non_artist_tracks(
-        self, artist_name: str, playlist_name: str
+            self, artist_name: str, playlist_name: str
     ) -> List[Dict]:
         """Find tracks in playlist that are NOT from the specified artist"""
         playlist_tracks = self.get_playlist_tracks(playlist_name)
@@ -574,7 +497,7 @@ class SpotifyPlaylistUpdater:
         batches = []
         for i in range(0, len(track_ids), batch_size):
             batch_number = (i // batch_size) + 1
-            batch_ids = track_ids[i : i + batch_size]
+            batch_ids = track_ids[i: i + batch_size]
             batches.append((batch_number, i, batch_ids))
 
         # Process batches in parallel
@@ -593,7 +516,7 @@ class SpotifyPlaylistUpdater:
         return non_artist_tracks
 
     def find_non_artist_tracks_multiple(
-        self, artist_names: List[str], playlist_name: str
+            self, artist_names: List[str], playlist_name: str
     ) -> List[Dict]:
         """Find tracks in playlist that are NOT from any of the specified artists using optimized batching"""
         playlist_tracks = self.get_playlist_tracks(playlist_name)  # Uses cache
@@ -686,13 +609,13 @@ class SpotifyPlaylistUpdater:
         batches = []
         for i in range(0, len(track_ids), batch_size):
             batch_number = (i // batch_size) + 1
-            batch_ids = track_ids[i : i + batch_size]
+            batch_ids = track_ids[i: i + batch_size]
             batches.append((batch_number, i, batch_ids))
 
         # Process batches with reduced concurrency
         non_artist_tracks = []
         with concurrent.futures.ThreadPoolExecutor(
-            max_workers=2
+                max_workers=2
         ) as executor:  # Reduced to 2 workers
             futures = [executor.submit(process_track_batch, batch) for batch in batches]
 
@@ -785,7 +708,7 @@ class SpotifyPlaylistUpdater:
                         for track in album_detail["tracks"]["items"]:
                             # Only include tracks where the artist is the main artist
                             if any(
-                                artist["id"] == artist_id for artist in track["artists"]
+                                    artist["id"] == artist_id for artist in track["artists"]
                             ):
                                 batch_tracks.append(
                                     {
@@ -816,12 +739,12 @@ class SpotifyPlaylistUpdater:
             batches = []
             for i in range(0, len(all_album_ids), batch_size):
                 batch_number = (i // batch_size) + 1
-                batch_ids = all_album_ids[i : i + batch_size]
+                batch_ids = all_album_ids[i: i + batch_size]
                 batches.append((batch_number, batch_ids))
 
             # Process batches with reduced concurrency
             with concurrent.futures.ThreadPoolExecutor(
-                max_workers=3
+                    max_workers=3
             ) as executor:  # Reduced workers
                 futures = [
                     executor.submit(process_album_batch, batch) for batch in batches
@@ -923,7 +846,7 @@ class SpotifyPlaylistUpdater:
             return False
 
     def remove_tracks_from_playlist(
-        self, playlist_name: str, tracks: List[Dict]
+            self, playlist_name: str, tracks: List[Dict]
     ) -> bool:
         """Remove multiple tracks from a playlist"""
         if not tracks:
@@ -950,7 +873,7 @@ class SpotifyPlaylistUpdater:
             # Remove tracks in batches of 100 (Spotify API limit)
             removed_count = 0
             for i in range(0, len(track_uris), 100):
-                batch = track_uris[i : i + 100]
+                batch = track_uris[i: i + 100]
                 self.sp.playlist_remove_all_occurrences_of_items(playlist_id, batch)
                 removed_count += len(batch)
                 print(
@@ -977,7 +900,7 @@ class SpotifyPlaylistUpdater:
             return False
 
     def find_missing_and_extra_tracks(
-        self, artist_name: str, playlist_name: str
+            self, artist_name: str, playlist_name: str
     ) -> Dict:
         """Compare artist discography with playlist and find both missing and extra tracks"""
         # Parse artist names (handle aliases separated by "/")
@@ -1083,7 +1006,7 @@ class SpotifyPlaylistUpdater:
             # Add tracks in batches of 100 (Spotify API limit)
             added_count = 0
             for i in range(0, len(track_uris), 100):
-                batch = track_uris[i : i + 100]
+                batch = track_uris[i: i + 100]
                 self.sp.playlist_add_items(playlist_id, batch)
                 added_count += len(batch)
                 print(
@@ -1096,75 +1019,3 @@ class SpotifyPlaylistUpdater:
         except Exception as e:
             print(f"❌ Error adding tracks to playlist: {e}")
             return False
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Compare artist discography with playlist"
-    )
-    parser.add_argument(
-        "playlist_name", help="Name of the playlist (also used as artist name)"
-    )
-    parser.add_argument("--client-id", required=True, help="Spotify Client ID")
-    parser.add_argument("--client-secret", required=True, help="Spotify Client Secret")
-    parser.add_argument(
-        "--redirect-uri",
-        default="http://127.0.0.1:3000/callback",
-        help="Redirect URI (default: http://127.0.0.1:3000/callback)",
-    )
-    parser.add_argument(
-        "--list-playlists", action="store_true", help="Just list all playlists and exit"
-    )
-
-    args = parser.parse_args()
-    updater = None
-
-    try:
-        updater = SpotifyPlaylistUpdater(
-            client_id=args.client_id,
-            client_secret=args.client_secret,
-            redirect_uri=args.redirect_uri,
-        )
-
-        # If just listing playlists, do that and exit
-        if args.list_playlists:
-            playlists = updater.get_user_playlists()
-            print(f"\nYour {len(playlists)} playlists:")
-            for i, playlist in enumerate(playlists, 1):
-                print(f"{i:3d}. '{playlist['name']}' (by {playlist['owner']})")
-            return
-
-        # Use playlist name as artist name
-        artist_name = args.playlist_name
-        playlist_name = args.playlist_name
-
-        print(
-            f"Comparing '{artist_name}' discography with playlist '{playlist_name}'..."
-        )
-
-        # Use the comprehensive method that finds both missing and extra tracks
-        result = updater.find_missing_and_extra_tracks(artist_name, playlist_name)
-        missing_tracks = result["missing"]
-        extra_tracks = result["extra"]
-
-        if missing_tracks:
-            print(
-                f"\nSummary: {len(missing_tracks)} tracks are missing from the playlist"
-            )
-        else:
-            print("\n✅ All artist tracks are in the playlist!")
-
-        if extra_tracks:
-            print(f"Note: {len(extra_tracks)} tracks in playlist are by other artists")
-
-    except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
-    finally:
-        # Clean up to prevent deletion errors
-        if updater:
-            updater._cleanup()
-
-
-if __name__ == "__main__":
-    main()
