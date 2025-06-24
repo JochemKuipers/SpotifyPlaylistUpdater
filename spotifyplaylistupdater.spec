@@ -5,7 +5,7 @@ a = Analysis(
     ['main_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('credentials.json', '.')],  # Include credentials file if it exists
+    datas=[('credentials.json', '.')],
     hiddenimports=['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets'],
     hookspath=[],
     runtime_hooks=[],
@@ -33,5 +33,5 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
-    icon='icon.ico',  # Replace with your icon path or remove if not needed
+    icon='assets/icon.ico',
 )

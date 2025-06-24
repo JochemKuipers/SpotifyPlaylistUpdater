@@ -1,6 +1,7 @@
 """
 Main entry point for CLI interface
 """
+
 import argparse
 import sys
 

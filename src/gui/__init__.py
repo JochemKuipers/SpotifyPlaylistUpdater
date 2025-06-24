@@ -1,4 +1,5 @@
 """
 GUI module initialization
 """
-from src.gui.playlist_gui import SpotifyPlaylistGUI
+
+from src.gui.playlist_gui import SpotifyPlaylistGUI as SpotifyPlaylistGUI

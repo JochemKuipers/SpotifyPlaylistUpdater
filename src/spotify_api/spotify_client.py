@@ -1,6 +1,7 @@
 """
 Core Spotify API functionality for the Spotify Playlist Updater.
 """
+
 import atexit
 import concurrent.futures
 import logging
@@ -135,7 +136,7 @@ class SpotifyPlaylistUpdater:
                 # Process remaining chunks in parallel
                 offsets = range(50, total, chunk_size)
                 with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=3
+                    max_workers=3
                 ) as executor:  # Reduced workers
                     futures = [
                         executor.submit(process_playlist_chunk, offset)
@@ -303,7 +304,7 @@ class SpotifyPlaylistUpdater:
                 # Process remaining chunks in parallel
                 offsets = range(100, total, chunk_size)
                 with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=3
+                    max_workers=3
                 ) as executor:  # Reduced workers
                     futures = [
                         executor.submit(process_track_chunk, offset)
@@ -389,7 +390,7 @@ class SpotifyPlaylistUpdater:
         return unique_missing
 
     def find_non_artist_tracks(
-            self, artist_name: str, playlist_name: str
+        self, artist_name: str, playlist_name: str
     ) -> List[Dict]:
         """Find tracks in playlist that are NOT from the specified artist"""
         playlist_tracks = self.get_playlist_tracks(playlist_name)
@@ -497,7 +498,7 @@ class SpotifyPlaylistUpdater:
         batches = []
         for i in range(0, len(track_ids), batch_size):
             batch_number = (i // batch_size) + 1
-            batch_ids = track_ids[i: i + batch_size]
+            batch_ids = track_ids[i : i + batch_size]
             batches.append((batch_number, i, batch_ids))
 
         # Process batches in parallel
@@ -516,7 +517,7 @@ class SpotifyPlaylistUpdater:
         return non_artist_tracks
 
     def find_non_artist_tracks_multiple(
-            self, artist_names: List[str], playlist_name: str
+        self, artist_names: List[str], playlist_name: str
     ) -> List[Dict]:
         """Find tracks in playlist that are NOT from any of the specified artists using optimized batching"""
         playlist_tracks = self.get_playlist_tracks(playlist_name)  # Uses cache
@@ -609,13 +610,13 @@ class SpotifyPlaylistUpdater:
         batches = []
         for i in range(0, len(track_ids), batch_size):
             batch_number = (i // batch_size) + 1
-            batch_ids = track_ids[i: i + batch_size]
+            batch_ids = track_ids[i : i + batch_size]
             batches.append((batch_number, i, batch_ids))
 
         # Process batches with reduced concurrency
         non_artist_tracks = []
         with concurrent.futures.ThreadPoolExecutor(
-                max_workers=2
+            max_workers=2
         ) as executor:  # Reduced to 2 workers
             futures = [executor.submit(process_track_batch, batch) for batch in batches]
 
@@ -708,7 +709,7 @@ class SpotifyPlaylistUpdater:
                         for track in album_detail["tracks"]["items"]:
                             # Only include tracks where the artist is the main artist
                             if any(
-                                    artist["id"] == artist_id for artist in track["artists"]
+                                artist["id"] == artist_id for artist in track["artists"]
                             ):
                                 batch_tracks.append(
                                     {
@@ -739,12 +740,12 @@ class SpotifyPlaylistUpdater:
             batches = []
             for i in range(0, len(all_album_ids), batch_size):
                 batch_number = (i // batch_size) + 1
-                batch_ids = all_album_ids[i: i + batch_size]
+                batch_ids = all_album_ids[i : i + batch_size]
                 batches.append((batch_number, batch_ids))
 
             # Process batches with reduced concurrency
             with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=3
+                max_workers=3
             ) as executor:  # Reduced workers
                 futures = [
                     executor.submit(process_album_batch, batch) for batch in batches
@@ -846,7 +847,7 @@ class SpotifyPlaylistUpdater:
             return False
 
     def remove_tracks_from_playlist(
-            self, playlist_name: str, tracks: List[Dict]
+        self, playlist_name: str, tracks: List[Dict]
     ) -> bool:
         """Remove multiple tracks from a playlist"""
         if not tracks:
@@ -873,7 +874,7 @@ class SpotifyPlaylistUpdater:
             # Remove tracks in batches of 100 (Spotify API limit)
             removed_count = 0
             for i in range(0, len(track_uris), 100):
-                batch = track_uris[i: i + 100]
+                batch = track_uris[i : i + 100]
                 self.sp.playlist_remove_all_occurrences_of_items(playlist_id, batch)
                 removed_count += len(batch)
                 print(
@@ -900,7 +901,7 @@ class SpotifyPlaylistUpdater:
             return False
 
     def find_missing_and_extra_tracks(
-            self, artist_name: str, playlist_name: str
+        self, artist_name: str, playlist_name: str
     ) -> Dict:
         """Compare artist discography with playlist and find both missing and extra tracks"""
         # Parse artist names (handle aliases separated by "/")
@@ -1006,7 +1007,7 @@ class SpotifyPlaylistUpdater:
             # Add tracks in batches of 100 (Spotify API limit)
             added_count = 0
             for i in range(0, len(track_uris), 100):
-                batch = track_uris[i: i + 100]
+                batch = track_uris[i : i + 100]
                 self.sp.playlist_add_items(playlist_id, batch)
                 added_count += len(batch)
                 print(

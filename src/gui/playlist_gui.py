@@ -1,6 +1,7 @@
 """
 GUI module for Spotify Playlist Updater.
 """
+
 import json
 import os
 
@@ -112,15 +113,15 @@ class SpotifyWorker(QThread):
     tracks_removed = Signal(bool, str)
 
     def __init__(
-            self,
-            client_id,
-            client_secret,
-            redirect_uri,
-            artist_name,
-            playlist_name,
-            operation="analyze",
-            tracks_to_add=None,
-            tracks_to_remove=None,
+        self,
+        client_id,
+        client_secret,
+        redirect_uri,
+        artist_name,
+        playlist_name,
+        operation="analyze",
+        tracks_to_add=None,
+        tracks_to_remove=None,
     ):
         super().__init__()
         self.client_id = client_id
@@ -207,6 +208,8 @@ class SpotifyWorker(QThread):
 
 
 class SpotifyPlaylistGUI(QMainWindow):
+    """Main GUI class for Spotify Playlist Updater"""
+
     def __init__(self):
         super().__init__()
         self.individual_action_button = None
@@ -266,6 +269,7 @@ class SpotifyPlaylistGUI(QMainWindow):
         event.accept()
 
     def init_ui(self):
+        """Initialize the GUI layout and components"""
         self.setWindowTitle("Spotify Playlist Updater")
         self.setGeometry(100, 100, 1200, 800)
 
@@ -376,7 +380,12 @@ class SpotifyPlaylistGUI(QMainWindow):
         self.add_tracks_button.clicked.connect(self.add_missing_tracks)
         self.add_tracks_button.setEnabled(False)
         self.add_tracks_button.setStyleSheet(
-            "QPushButton { background-color: #1DB954; color: white; font-weight: bold; padding: 8px; }"
+            "QPushButton { "
+            "background-color: #1DB954; "
+            "color: white; "
+            "font-weight: bold; "
+            "padding: 8px; "
+            "}"
         )
         missing_layout.addWidget(self.add_tracks_button)
 
@@ -455,7 +464,7 @@ class SpotifyPlaylistGUI(QMainWindow):
                 "client_secret": self.client_secret_edit.text(),
                 "redirect_uri": self.redirect_uri_edit.text(),
             }
-            with open("credentials.json", "w") as f:
+            with open("credentials.json") as f:
                 json.dump(creds, f)
 
             QMessageBox.information(self, "Success", "Credentials saved successfully!")
@@ -498,7 +507,9 @@ class SpotifyPlaylistGUI(QMainWindow):
             self.redirect_uri_edit.text(),
         )
 
-        self.playlist_fetcher.playlists_fetched.connect(self.setup_playlist_autocomplete)
+        self.playlist_fetcher.playlists_fetched.connect(
+            self.setup_playlist_autocomplete
+        )
         self.playlist_fetcher.error.connect(self.playlist_fetch_error)
         # Remove the problematic connection and let Qt handle object lifecycle
         self.playlist_fetcher.start()
@@ -536,11 +547,11 @@ class SpotifyPlaylistGUI(QMainWindow):
     def analyze_playlist(self):
         """Start the playlist analysis"""
         if not all(
-                [
-                    self.client_id_edit.text(),
-                    self.client_secret_edit.text(),
-                    self.playlist_name_edit.text(),
-                ]
+            [
+                self.client_id_edit.text(),
+                self.client_secret_edit.text(),
+                self.playlist_name_edit.text(),
+            ]
         ):
             QMessageBox.warning(self, "Warning", "Please fill in all required fields!")
             return
@@ -686,7 +697,7 @@ SELECTED MISSING TRACKS ({len(tracks)} tracks):
 
 """
                 for i, track in enumerate(tracks, 1):
-                    details += f"{i}. {track.get("name", "Unknown Track")} ({track.get("duration", "Unknown Duration")}) - {track.get("album", "Unknown Album")}\n"
+                    details += f"{i}. {track.get('name', 'Unknown Track')} ({track.get('duration', 'Unknown Duration')}) - {track.get('album', 'Unknown Album')}\n"
 
                 details += f"\nClick the button below to add all {len(tracks)} tracks to your playlist."
             else:
@@ -695,7 +706,7 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
 
 """
                 for i, track in enumerate(tracks, 1):
-                    details += f"{i}. {track.get("name", "Unknown Track")} ({track.get("duration", "Unknown Duration")}) by {track.get("main_artist", "Unknown Artist")}\n"
+                    details += f"{i}. {track.get('name', 'Unknown Track')} ({track.get('duration', 'Unknown Duration')}) by {track.get('main_artist', 'Unknown Artist')}\n"
 
                 details += f"\nClick the button below to remove all {len(tracks)} tracks from your playlist."
 
@@ -783,8 +794,8 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
 
         # Confirm with user
         track_names = [
-            f"{track.get("name", "Unknown Track")} by {track.get("main_artist", "Unknown Artist")}" for track in
-            selected_tracks
+            f"{track.get('name', 'Unknown Track')} by {track.get('main_artist', 'Unknown Artist')}"
+            for track in selected_tracks
         ]
         if len(selected_tracks) == 1:
             message = f"Are you sure you want to remove '{track_names[0]}' from the playlist '{self.playlist_name_edit.text()}'?\n\nThis action cannot be undone."

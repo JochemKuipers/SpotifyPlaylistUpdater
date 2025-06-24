@@ -1,6 +1,7 @@
 """
 Main entry point for GUI interface
 """
+
 import sys
 
 from PySide6.QtWidgets import QApplication
