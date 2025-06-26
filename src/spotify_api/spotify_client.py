@@ -597,7 +597,10 @@ class SpotifyPlaylistUpdater:
                             {
                                 "name": original_track["name"],
                                 "duration": original_track["duration"],
-                                "artists": original_track["artists"],
+                                # Use the authoritative artist data from the full API response
+                                "artists": [
+                                    artist["name"] for artist in full_track["artists"]
+                                ],
                                 "uri": original_track["uri"],
                                 "main_artist": full_track["artists"][0]["name"],
                             }
