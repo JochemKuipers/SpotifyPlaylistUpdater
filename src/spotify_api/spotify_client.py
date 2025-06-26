@@ -141,9 +141,7 @@ class SpotifyPlaylistUpdater:
 
                 # Process remaining chunks in parallel
                 offsets = range(50, total, chunk_size)
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=3
-                ) as executor:  # Reduced workers
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                     futures = [
                         executor.submit(process_playlist_chunk, offset)
                         for offset in offsets
@@ -254,7 +252,7 @@ class SpotifyPlaylistUpdater:
                         {
                             "name": clean_name(track["name"]),
                             "duration": format_duration(track["duration_ms"]),
-                            "artists": [artist["name"] for artist in track["artists"]],
+                            "artists": [artist for artist in track["artists"]],
                             "uri": track["uri"],
                         }
                     )
@@ -290,8 +288,7 @@ class SpotifyPlaylistUpdater:
                                             track["duration_ms"]
                                         ),
                                         "artists": [
-                                            artist["name"]
-                                            for artist in track["artists"]
+                                            artist for artist in track["artists"]
                                         ],
                                         "uri": track["uri"],
                                     }
@@ -309,9 +306,7 @@ class SpotifyPlaylistUpdater:
 
                 # Process remaining chunks in parallel
                 offsets = range(100, total, chunk_size)
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=3
-                ) as executor:  # Reduced workers
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                     futures = [
                         executor.submit(process_track_chunk, offset)
                         for offset in offsets
@@ -437,7 +432,6 @@ class SpotifyPlaylistUpdater:
                     f"Processing track batch {batch_number} ({len(batch_ids)} tracks)"
                 )
 
-                # Get multiple tracks at once
                 tracks_details = self.sp.tracks(batch_ids, market=self.market)
                 batch_non_artist_tracks = []
 
@@ -449,7 +443,6 @@ class SpotifyPlaylistUpdater:
                         artist["id"] for artist in full_track["artists"]
                     ]
 
-                    # If target artist is not in the track's artists, it's a non-artist track
                     if target_artist_id not in track_artist_ids:
                         original_track = playlist_tracks[start_idx + j]
                         batch_non_artist_tracks.append(
@@ -565,16 +558,11 @@ class SpotifyPlaylistUpdater:
         def process_track_batch(batch_info):
             batch_number, start_idx, batch_ids = batch_info
             try:
-                # Add small delay between batches to avoid rate limiting
-                import time
-
-                time.sleep(0.1)
-
                 logger.info(
                     f"Processing track batch {batch_number} ({len(batch_ids)} tracks)"
                 )
 
-                # Get multiple tracks at once
+                # Fetch full track details from Spotify API
                 tracks_details = self.sp.tracks(batch_ids, market=self.market)
                 batch_non_artist_tracks = []
 
@@ -582,27 +570,32 @@ class SpotifyPlaylistUpdater:
                     if not full_track:
                         continue
 
-                    track_artist_ids = [
-                        artist["id"] for artist in full_track["artists"]
+                    # Use playlist metadata for artist check
+                    original_track = playlist_tracks[start_idx + j]
+                    original_artist_names = [
+                        a["name"] for a in original_track["artists"]
                     ]
+                    original_artist_ids = [a["id"] for a in original_track["artists"]]
 
-                    # If none of the target artists are in the track's artists, it's a non-artist track
-                    is_by_target_artist = any(
-                        artist_id in track_artist_ids for artist_id in target_artist_ids
-                    )
-
-                    if not is_by_target_artist:
-                        original_track = playlist_tracks[start_idx + j]
+                    if not (
+                        any(
+                            artist_id in original_artist_ids
+                            for artist_id in target_artist_ids
+                        )
+                        or any(
+                            artist_name in original_artist_names
+                            for artist_name in artist_names
+                        )
+                    ):
                         batch_non_artist_tracks.append(
                             {
                                 "name": original_track["name"],
                                 "duration": original_track["duration"],
-                                # Use the authoritative artist data from the full API response
-                                "artists": [
-                                    artist["name"] for artist in full_track["artists"]
-                                ],
+                                "artists": original_track["artists"],
                                 "uri": original_track["uri"],
-                                "main_artist": full_track["artists"][0]["name"],
+                                "main_artist": full_track["artists"][0]["name"]
+                                if full_track["artists"]
+                                else "Unknown",
                             }
                         )
 
@@ -624,9 +617,7 @@ class SpotifyPlaylistUpdater:
 
         # Process batches with reduced concurrency
         non_artist_tracks = []
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=2
-        ) as executor:  # Reduced to 2 workers
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(process_track_batch, batch) for batch in batches]
 
             for future in concurrent.futures.as_completed(futures):
@@ -698,11 +689,6 @@ class SpotifyPlaylistUpdater:
             def process_album_batch(batch_info):
                 batch_number, batch_ids = batch_info
                 try:
-                    # Add small delay between batches
-                    import time
-
-                    time.sleep(0.1)
-
                     logger.info(
                         f"Processing album batch {batch_number} ({len(batch_ids)} albums)"
                     )
@@ -719,6 +705,9 @@ class SpotifyPlaylistUpdater:
                             # Only include tracks where the artist is the main artist
                             if any(
                                 artist["id"] == artist_id for artist in track["artists"]
+                            ) or any(
+                                artist["name"] == artist_name_found
+                                for artist in track["artists"]
                             ):
                                 batch_tracks.append(
                                     {
@@ -726,10 +715,7 @@ class SpotifyPlaylistUpdater:
                                         "duration": format_duration(
                                             track["duration_ms"]
                                         ),
-                                        "artists": [
-                                            artist["name"]
-                                            for artist in track["artists"]
-                                        ],
+                                        "artists": track["artists"],
                                         "album": album_detail["name"],
                                         "release_date": album_detail["release_date"],
                                         "uri": track["uri"],
@@ -753,9 +739,7 @@ class SpotifyPlaylistUpdater:
                 batches.append((batch_number, batch_ids))
 
             # Process batches with reduced concurrency
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=3
-            ) as executor:  # Reduced workers
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 futures = [
                     executor.submit(process_album_batch, batch) for batch in batches
                 ]
