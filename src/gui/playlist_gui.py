@@ -667,13 +667,18 @@ class SpotifyPlaylistGUI(QMainWindow):
         if len(tracks) == 1:
             # Single track - show full details
             track = tracks[0]
+            artists_data = track.get("artists")
+            if isinstance(artists_data, list) and artists_data:
+                artist_names = [a.get("name", "Unknown Artist") for a in artists_data]
+            else:
+                artist_names = ["Unknown Artist"]
             if selection_type == "missing":
                 details = f"""
 MISSING TRACK DETAILS:
 
 Track Name: {track.get("name", "Unknown Track")}
 Duration: {track.get("duration", "Unknown Duration")}
-Artists: {", ".join(track.get("artists", ["Unknown Artist"]))}
+Artists: {", ".join(artist_names)}
 Album: {track.get("album", "Unknown Album")}
 Release Date: {track.get("release_date", "Unknown Release Date")}
 Spotify URI: {track.get("uri", "Unknown URI")}
@@ -687,7 +692,7 @@ NON-ARTIST TRACK DETAILS:
 Track Name: {track.get("name", "Unknown Track")}
 Duration: {track.get("duration", "Unknown Duration")}
 Main Artist: {track.get("main_artist", "Unknown Artist")}
-All Artists: {", ".join(track.get("artists", ["Unknown Artist"]))}
+All Artists: {", ".join(artist_names)}
 Spotify URI: {track.get("uri", "Unknown URI")}
 
 This track is in your playlist but is not by the target artist.
