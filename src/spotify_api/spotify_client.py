@@ -53,10 +53,6 @@ class SpotifyPlaylistUpdater:
             self.user = None
             self.market = "US"
 
-        # Initialize caches
-        self._playlists_cache = None
-        self._playlist_tracks_cache = {}
-
         # Register cleanup function
         atexit.register(self._cleanup)
 
@@ -68,15 +64,8 @@ class SpotifyPlaylistUpdater:
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 
-    def get_user_playlists(self, force_refresh=False) -> List[Dict]:
-        """Get all user playlists with details using caching"""
-        # Return cached playlists if available and not forcing refresh
-        if self._playlists_cache is not None and not force_refresh:
-            logger.info(
-                f"Using cached playlists ({len(self._playlists_cache)} playlists)"
-            )
-            return self._playlists_cache
-
+    def get_user_playlists(self) -> List[Dict]:
+        """Get all user playlists with details"""
         try:
             logger.info("Fetching user playlists")
             playlists = []
@@ -87,19 +76,19 @@ class SpotifyPlaylistUpdater:
 
             if total == 0:
                 logger.warning("No playlists found")
-                self._playlists_cache = []
                 return []
 
             # Process first batch
             for item in result["items"]:
-                playlists.append(
-                    {
-                        "name": item["name"],
-                        "id": item["id"],
-                        "uri": item["uri"],
-                        "owner": item["owner"]["display_name"],
-                    }
-                )
+                if item["owner"]["id"] == self.user["id"]:
+                    playlists.append(
+                        {
+                            "name": item["name"],
+                            "id": item["id"],
+                            "uri": item["uri"],
+                            "owner": item["owner"]["display_name"],
+                        }
+                    )
 
             # If there are more playlists, fetch them in parallel
             if total > 50:
@@ -120,14 +109,15 @@ class SpotifyPlaylistUpdater:
                         chunk_playlists = []
 
                         for item in chunk["items"]:
-                            chunk_playlists.append(
-                                {
-                                    "name": item["name"],
-                                    "id": item["id"],
-                                    "uri": item["uri"],
-                                    "owner": item["owner"]["display_name"],
-                                }
-                            )
+                            if item["owner"]["id"] == self.user["id"]:
+                                chunk_playlists.append(
+                                    {
+                                        "name": item["name"],
+                                        "id": item["id"],
+                                        "uri": item["uri"],
+                                        "owner": item["owner"]["display_name"],
+                                    }
+                                )
 
                         logger.info(
                             f"Completed playlist chunk {chunk_number}: {len(chunk_playlists)} playlists"
@@ -156,9 +146,7 @@ class SpotifyPlaylistUpdater:
                             logger.error(f"Error processing playlist chunk: {e}")
                             raise e
 
-            # Cache the results
-            self._playlists_cache = playlists
-            logger.info(f"Successfully fetched and cached {len(playlists)} playlists")
+            logger.info(f"Successfully fetched {len(playlists)} playlists")
             return playlists
 
         except Exception as e:
@@ -215,12 +203,7 @@ class SpotifyPlaylistUpdater:
             return {}
 
     def get_playlist_tracks(self, playlist_name: str) -> List[Dict]:
-        """Get all track details from a playlist by name using caching"""
-        # Check cache first
-        if playlist_name in self._playlist_tracks_cache:
-            logger.info(f"Using cached tracks for playlist '{playlist_name}'")
-            return self._playlist_tracks_cache[playlist_name]
-
+        """Get all track details from a playlist by name"""
         try:
             # Find the playlist using cached playlists
             playlist = self.find_playlist_by_name(playlist_name)
@@ -237,9 +220,7 @@ class SpotifyPlaylistUpdater:
 
             if total == 0:
                 print("Playlist is empty")
-                tracklist = []
-                self._playlist_tracks_cache[playlist_name] = tracklist
-                return tracklist
+                return []
 
             logger.info(f"Fetching {total} tracks from playlist")
             tracklist = []
@@ -321,10 +302,8 @@ class SpotifyPlaylistUpdater:
                             logger.error(f"Error processing track chunk: {e}")
                             raise e
 
-            # Cache the results
-            self._playlist_tracks_cache[playlist_name] = tracklist
             print(
-                f"Found and cached {len(tracklist)} tracks in playlist '{matched_name}' (market: {self.market})"
+                f"Found {len(tracklist)} tracks in playlist '{matched_name}' (market: {self.market})"
             )
             return tracklist
 
@@ -519,7 +498,7 @@ class SpotifyPlaylistUpdater:
         self, artist_names: List[str], playlist_name: str
     ) -> List[Dict]:
         """Find tracks in playlist that are NOT from any of the specified artists using optimized batching"""
-        playlist_tracks = self.get_playlist_tracks(playlist_name)  # Uses cache
+        playlist_tracks = self.get_playlist_tracks(playlist_name)
 
         if not playlist_tracks:
             print("Cannot compare - playlist not found or empty!")
@@ -824,14 +803,7 @@ class SpotifyPlaylistUpdater:
 
             print(f"✅ Successfully removed '{track['name']}' from '{playlist_name}'!")
 
-            # Update the cached playlist tracks if it exists
-            if playlist_name in self._playlist_tracks_cache:
-                # Remove all occurrences of this track from cache
-                self._playlist_tracks_cache[playlist_name] = [
-                    cached_track
-                    for cached_track in self._playlist_tracks_cache[playlist_name]
-                    if cached_track["uri"] != track_uri
-                ]
+
 
             return True
 
@@ -878,14 +850,7 @@ class SpotifyPlaylistUpdater:
                 f"✅ Successfully removed {removed_count} tracks from '{playlist_name}'!"
             )
 
-            # Update the cached playlist tracks if it exists
-            if playlist_name in self._playlist_tracks_cache:
-                removed_uris = set(track_uris)
-                self._playlist_tracks_cache[playlist_name] = [
-                    cached_track
-                    for cached_track in self._playlist_tracks_cache[playlist_name]
-                    if cached_track["uri"] not in removed_uris
-                ]
+
 
             return True
 
@@ -1013,3 +978,100 @@ class SpotifyPlaylistUpdater:
         except Exception as e:
             print(f"❌ Error adding tracks to playlist: {e}")
             return False
+
+    def analyze_all_playlists(self) -> Dict:
+        """Analyze all user playlists by extracting artist names from playlist names"""
+        try:
+            print("Starting analysis of all playlists...")
+            
+            # Get all user playlists
+            playlists = self.get_user_playlists()
+            if not playlists:
+                print("No playlists found to analyze")
+                return {}
+            
+            print(f"Found {len(playlists)} playlists to analyze")
+            
+            # Analyze each playlist
+            results = {}
+            total_playlists = len(playlists)
+            
+            for i, playlist in enumerate(playlists, 1):
+                playlist_name = playlist["name"]
+                print(f"Analyzing playlist {i}/{total_playlists}: {playlist_name}")
+                
+                try:
+                    # Extract artist name from playlist name (same logic as the app currently uses)
+                    # The playlist name should contain the artist name
+                    artist_name = playlist_name.strip()
+                    
+                    if not artist_name:
+                        print(f"  - Playlist '{playlist_name}' has no name, skipping")
+                        continue
+                    
+                    # Get artist tracks
+                    artist_tracks = self.get_artist_all_tracks(artist_name)
+                    if not artist_tracks:
+                        print(f"  - No tracks found for artist '{artist_name}', skipping")
+                        results[playlist_name] = {"missing": [], "extra": [], "total_tracks": 0, "error": f"No tracks found for artist: {artist_name}"}
+                        continue
+                    
+                    # Get playlist tracks
+                    playlist_tracks = self.get_playlist_tracks(playlist_name)
+                    
+                    if not playlist_tracks:
+                        print(f"  - Playlist '{playlist_name}' is empty, skipping")
+                        results[playlist_name] = {"missing": [], "extra": [], "total_tracks": 0}
+                        continue
+                    
+                    print(f"  - Found {len(artist_tracks)} artist tracks and {len(playlist_tracks)} playlist tracks")
+                    
+                    # Find missing tracks (artist tracks not in playlist)
+                    missing_tracks = []
+                    for artist_track in artist_tracks:
+                        is_missing = True
+                        for playlist_track in playlist_tracks:
+                            if is_track_match(artist_track, playlist_track):
+                                is_missing = False
+                                break
+                        if is_missing:
+                            missing_tracks.append(artist_track)
+                    
+                    # Remove duplicates from missing tracks
+                    unique_missing = []
+                    for track in missing_tracks:
+                        is_duplicate = False
+                        for existing in unique_missing:
+                            if is_track_match(track, existing):
+                                is_duplicate = True
+                                break
+                        if not is_duplicate:
+                            unique_missing.append(track)
+                    
+                    # Find extra tracks (playlist tracks not from the artist)
+                    extra_tracks = self.find_non_artist_tracks(artist_name, playlist_name)
+                    
+                    # Sort results
+                    unique_missing.sort(key=lambda x: x["release_date"])
+                    extra_tracks.sort(key=lambda x: x["name"].lower())
+                    
+                    results[playlist_name] = {
+                        "artist_name": artist_name,
+                        "missing": unique_missing,
+                        "extra": extra_tracks,
+                        "total_tracks": len(playlist_tracks),
+                        "artist_tracks_count": len(artist_tracks)
+                    }
+                    
+                    print(f"  - Missing: {len(unique_missing)}, Extra: {len(extra_tracks)}")
+                    
+                except Exception as e:
+                    print(f"  - Error analyzing playlist '{playlist_name}': {e}")
+                    results[playlist_name] = {"missing": [], "extra": [], "total_tracks": 0, "error": str(e)}
+            
+            print(f"Analysis complete! Analyzed {len(results)} playlists")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error analyzing all playlists: {e}")
+            raise e

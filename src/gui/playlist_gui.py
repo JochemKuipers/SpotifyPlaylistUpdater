@@ -20,9 +20,10 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QFormLayout,
     QMessageBox,
-    QListWidget,
     QSplitter,
     QCompleter,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
 
 from src.spotify_api.spotify_client import SpotifyPlaylistUpdater
@@ -208,6 +209,39 @@ class SpotifyWorker(QThread):
             self.tracks_removed.emit(False, "Failed to remove tracks from playlist.")
 
 
+class AllPlaylistsWorker(QThread):
+    """Worker thread for analyzing all playlists at once"""
+
+    progress_update = Signal(str)
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, client_id, client_secret, redirect_uri):
+        super().__init__()
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uri = redirect_uri
+
+    def run(self):
+        try:
+            self.progress_update.emit("Connecting to Spotify...")
+
+            # Use singleton manager to prevent multiple clients
+            manager = SpotifyManager()
+            updater = manager.get_client(
+                self.client_id, self.client_secret, self.redirect_uri
+            )
+
+            self.progress_update.emit("Analyzing all playlists...")
+            result = updater.analyze_all_playlists()
+
+            self.progress_update.emit("Analysis complete!")
+            self.finished.emit(result)
+
+        except Exception as e:
+            self.error.emit(f"Error: {str(e)}")
+
+
 class SpotifyPlaylistGUI(QMainWindow):
     """Main GUI class for Spotify Playlist Updater"""
 
@@ -237,6 +271,7 @@ class SpotifyPlaylistGUI(QMainWindow):
         self.extra_tracks_data = []
         self.playlist_completer = None
         self.spotify_manager = SpotifyManager()
+        self.all_playlists_worker = None # Initialize the new worker
         self.init_ui()
         self.load_credentials()
         self.fetch_playlists()
@@ -258,6 +293,11 @@ class SpotifyPlaylistGUI(QMainWindow):
                 self.playlist_fetcher.requestInterruption()
                 if not self.playlist_fetcher.wait(1000):
                     self.playlist_fetcher.terminate()
+
+            if self.all_playlists_worker and self.all_playlists_worker.isRunning():
+                self.all_playlists_worker.requestInterruption()
+                if not self.all_playlists_worker.wait(1000):
+                    self.all_playlists_worker.terminate()
 
             # Clean up Spotify manager
             self.spotify_manager.cleanup()
@@ -350,6 +390,13 @@ class SpotifyPlaylistGUI(QMainWindow):
         self.analyze_button.clicked.connect(self.analyze_playlist)
         button_layout.addWidget(self.analyze_button)
 
+        self.analyze_all_button = QPushButton("Analyze All Playlists")
+        self.analyze_all_button.clicked.connect(self.analyze_all_playlists)
+        self.analyze_all_button.setStyleSheet(
+            "QPushButton { background-color: #9b59b6; color: white; font-weight: bold; padding: 8px; }"
+        )
+        button_layout.addWidget(self.analyze_all_button)
+
         main_layout.addLayout(button_layout)
 
         # Progress bar
@@ -371,10 +418,10 @@ class SpotifyPlaylistGUI(QMainWindow):
         # Missing tracks panel
         missing_group = QGroupBox("Missing Tracks (Not in Playlist)")
         missing_layout = QVBoxLayout()
-        self.missing_list = QListWidget()
-        # Enable multi-selection
-        self.missing_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        missing_layout.addWidget(self.missing_list)
+        self.missing_tree = QTreeWidget()
+        self.missing_tree.setHeaderLabel("Missing Tracks")
+        self.missing_tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
+        missing_layout.addWidget(self.missing_tree)
 
         # Add tracks button under missing tracks list
         self.add_tracks_button = QPushButton("Add All Missing Tracks")
@@ -396,10 +443,10 @@ class SpotifyPlaylistGUI(QMainWindow):
         # Extra tracks panel
         extra_group = QGroupBox("Non-Artist Tracks (In Playlist)")
         extra_layout = QVBoxLayout()
-        self.extra_list = QListWidget()
-        # Enable multi-selection
-        self.extra_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        extra_layout.addWidget(self.extra_list)
+        self.extra_tree = QTreeWidget()
+        self.extra_tree.setHeaderLabel("Non-Artist Tracks")
+        self.extra_tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
+        extra_layout.addWidget(self.extra_tree)
 
         # Add remove tracks button under extra tracks list
         self.remove_tracks_button = QPushButton("Remove All Non-Artist Tracks")
@@ -433,8 +480,8 @@ class SpotifyPlaylistGUI(QMainWindow):
         splitter.addWidget(details_group)
 
         # Connect list selection changes to details (use selectionChanged instead of itemClicked)
-        self.missing_list.itemSelectionChanged.connect(self.update_selection_details)
-        self.extra_list.itemSelectionChanged.connect(self.update_selection_details)
+        self.missing_tree.itemSelectionChanged.connect(self.update_selection_details)
+        self.extra_tree.itemSelectionChanged.connect(self.update_selection_details)
 
         # Track which list is currently selected
         self.current_selection = None  # Will be 'missing' or 'extra'
@@ -571,8 +618,8 @@ class SpotifyPlaylistGUI(QMainWindow):
         self.remove_tracks_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)
-        self.missing_list.clear()
-        self.extra_list.clear()
+        self.missing_tree.clear() # Clear the tree widget
+        self.extra_tree.clear() # Clear the tree widget
         self.details_text.clear()
 
         # Start worker thread
@@ -593,37 +640,206 @@ class SpotifyPlaylistGUI(QMainWindow):
         )
         self.worker.start()
 
-    def update_selection_details(self):
-        """Update details panel based on current selection in either list"""
-        missing_selected = self.missing_list.selectedItems()
-        extra_selected = self.extra_list.selectedItems()
+    def analyze_all_playlists(self):
+        """Start the analysis of all playlists"""
+        if not all(
+            [
+                self.client_id_edit.text(),
+                self.client_secret_edit.text(),
+            ]
+        ):
+            QMessageBox.warning(self, "Warning", "Please fill in all required fields!")
+            return
 
-        # Clear other list's selection when selecting from one list
+        # Stop any running worker
+        if hasattr(self, 'all_playlists_worker') and self.all_playlists_worker and self.all_playlists_worker.isRunning():
+            self.all_playlists_worker.terminate()
+            self.all_playlists_worker.wait(3000)
+
+        # Clear previous results and disable buttons
+        self.analyze_all_button.setEnabled(False)
+        self.analyze_button.setEnabled(False)
+        self.add_tracks_button.setEnabled(False)
+        self.remove_tracks_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        
+        # Clear existing lists
+        self.missing_tree.clear() # Clear the tree widget
+        self.extra_tree.clear() # Clear the tree widget
+        self.details_text.clear()
+
+        # Start worker thread
+        self.all_playlists_worker = AllPlaylistsWorker(
+            self.client_id_edit.text(),
+            self.client_secret_edit.text(),
+            self.redirect_uri_edit.text(),
+        )
+
+        self.all_playlists_worker.progress_update.connect(self.update_status)
+        self.all_playlists_worker.finished.connect(self.all_playlists_analysis_finished)
+        self.all_playlists_worker.error.connect(self.all_playlists_analysis_error)
+        self.all_playlists_worker.start()
+
+    def display_all_playlists_results(self, results):
+        """Display results for all playlists in collapsible tree structures"""
+        if not results:
+            self.status_label.setText("No playlists found or no results available")
+            return
+        
+        # Store the all playlists results for later use
+        self.all_playlists_results = results
+        
+        # Display results grouped by playlist in collapsible trees
+        self.missing_tree.clear()
+        self.extra_tree.clear()
+        
+        total_missing = 0
+        total_extra = 0
+        
+        for playlist_name, playlist_data in results.items():
+            if "error" in playlist_data:
+                # Add error as a special item in missing tree
+                error_item = QTreeWidgetItem([f"❌ {playlist_name}: {playlist_data['error']}"])
+                self.missing_tree.addTopLevelItem(error_item)
+                continue
+            
+            missing_tracks = playlist_data.get("missing", [])
+            extra_tracks = playlist_data.get("extra", [])
+            artist_name = playlist_data.get("artist_name", "Unknown")
+            
+            # Create missing tracks playlist group
+            if missing_tracks:
+                playlist_header = QTreeWidgetItem([f"📁 {playlist_name} ({artist_name}) - {len(missing_tracks)} missing tracks"])
+                playlist_header.setExpanded(False)  # Start collapsed
+                self.missing_tree.addTopLevelItem(playlist_header)
+                
+                # Add missing tracks as children
+                for track in missing_tracks:
+                    track_item = QTreeWidgetItem([f"• {track['name']} ({track['duration']}) - {track.get('album', 'Unknown Album')}"])
+                    track_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "track", "track_data": track, "playlist": playlist_name})
+                    playlist_header.addChild(track_item)
+                
+                total_missing += len(missing_tracks)
+            
+            # Create extra tracks playlist group
+            if extra_tracks:
+                playlist_header = QTreeWidgetItem([f"📁 {playlist_name} ({artist_name}) - {len(extra_tracks)} extra tracks"])
+                playlist_header.setExpanded(False)  # Start collapsed
+                self.extra_tree.addTopLevelItem(playlist_header)
+                
+                # Add extra tracks as children
+                for track in extra_tracks:
+                    track_item = QTreeWidgetItem([f"• {track['name']} by {track.get('main_artist', 'Unknown')} ({track['duration']})"])
+                    track_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "track", "track_data": track, "playlist": playlist_name})
+                    playlist_header.addChild(track_item)
+                
+                total_extra += len(extra_tracks)
+        
+        # Update button states
+        if total_missing > 0:
+            self.add_tracks_button.setEnabled(True)
+            self.add_tracks_button.setText(f"Add All Missing Tracks ({total_missing})")
+        else:
+            self.add_tracks_button.setEnabled(False)
+            self.add_tracks_button.setText("Add All Missing Tracks")
+        
+        if total_extra > 0:
+            self.remove_tracks_button.setEnabled(True)
+            self.remove_tracks_button.setText(f"Remove All Non-Artist Tracks ({total_extra})")
+        else:
+            self.remove_tracks_button.setEnabled(False)
+            self.remove_tracks_button.setText("Remove All Non-Artist Tracks")
+        
+        # Update status
+        total_playlists = len(results)
+        self.status_label.setText(f"Analysis Complete: {total_playlists} playlists analyzed - {total_missing} missing, {total_extra} extra tracks")
+
+    def all_playlists_analysis_finished(self, results):
+        """Handle completion of all playlists analysis"""
+        self.progress_bar.setVisible(False)
+        self.analyze_all_button.setEnabled(True)
+        self.analyze_button.setEnabled(True)
+        
+        self.display_all_playlists_results(results)
+        
+        # Show success message
+        total_playlists = len(results)
+        QMessageBox.information(
+            self,
+            "Analysis Complete",
+            f"Successfully analyzed {total_playlists} playlists! Results are displayed in the lists above."
+        )
+
+    def all_playlists_analysis_error(self, error_message):
+        """Handle error in all playlists analysis"""
+        self.progress_bar.setVisible(False)
+        self.analyze_all_button.setEnabled(True)
+        self.analyze_button.setEnabled(True)
+        
+        self.status_label.setText("❌ All playlists analysis failed")
+        QMessageBox.critical(self, "Error", error_message)
+
+    def update_selection_details(self):
+        """Update details panel based on current selection in either tree"""
+        missing_selected = self.missing_tree.selectedItems()
+        extra_selected = self.extra_tree.selectedItems()
+
+        # Clear other tree's selection when selecting from one tree
         if missing_selected and extra_selected:
             sender = self.sender()
-            if sender == self.missing_list:
-                self.extra_list.clearSelection()
+            if sender == self.missing_tree:
+                self.extra_tree.clearSelection()
                 extra_selected = []
             else:
-                self.missing_list.clearSelection()
+                self.missing_tree.clearSelection()
                 missing_selected = []
 
         if missing_selected:
             self.current_selection = "missing"
-            self.selected_track_indices = [
-                self.missing_list.row(item) for item in missing_selected
-            ]
-            self.show_selected_tracks_details("missing")
+            # Filter out playlist headers and get only track items
+            track_items = [item for item in missing_selected if item.parent() is not None]
+            if track_items:
+                self.selected_track_indices = []
+                self.selected_tracks_data = []
+                for item in track_items:
+                    track_data = item.data(0, Qt.ItemDataRole.UserRole)
+                    if track_data and track_data.get("type") == "track":
+                        self.selected_tracks_data.append(track_data["track_data"])
+                self.show_selected_tracks_details("missing")
+            else:
+                # Only headers selected, clear details
+                self.current_selection = None
+                self.selected_track_indices = []
+                self.selected_tracks_data = []
+                self.details_text.clear()
+                self.individual_action_button.setText("Select tracks to see actions")
+                self.individual_action_button.setEnabled(False)
         elif extra_selected:
             self.current_selection = "extra"
-            self.selected_track_indices = [
-                self.extra_list.row(item) for item in extra_selected
-            ]
-            self.show_selected_tracks_details("extra")
+            # Filter out playlist headers and get only track items
+            track_items = [item for item in extra_selected if item.parent() is not None]
+            if track_items:
+                self.selected_track_indices = []
+                self.selected_tracks_data = []
+                for item in track_items:
+                    track_data = item.data(0, Qt.ItemDataRole.UserRole)
+                    if track_data and track_data.get("type") == "track":
+                        self.selected_tracks_data.append(track_data["track_data"])
+                self.show_selected_tracks_details("extra")
+            else:
+                # Only headers selected, clear details
+                self.current_selection = None
+                self.selected_track_indices = []
+                self.selected_tracks_data = []
+                self.details_text.clear()
+                self.individual_action_button.setText("Select tracks to see actions")
+                self.individual_action_button.setEnabled(False)
         else:
             # No selection
             self.current_selection = None
             self.selected_track_indices = []
+            self.selected_tracks_data = []
             self.details_text.clear()
             self.individual_action_button.setText("Select tracks to see actions")
             self.individual_action_button.setEnabled(False)
@@ -633,28 +849,17 @@ class SpotifyPlaylistGUI(QMainWindow):
 
     def show_selected_tracks_details(self, selection_type):
         """Show details for selected tracks"""
-        if not self.selected_track_indices:
+        if not hasattr(self, 'selected_tracks_data') or not self.selected_tracks_data:
             return
 
+        tracks = self.selected_tracks_data
+
         if selection_type == "missing":
-            tracks = [
-                self.missing_tracks_data[i]
-                for i in self.selected_track_indices
-                if 0 <= i < len(self.missing_tracks_data)
-            ]
             action_text = f"Add {len(tracks)} Selected Track{'s' if len(tracks) != 1 else ''} to Playlist"
             button_color = "#1DB954"  # Green
         else:
-            tracks = [
-                self.extra_tracks_data[i]
-                for i in self.selected_track_indices
-                if 0 <= i < len(self.extra_tracks_data)
-            ]
             action_text = f"Remove {len(tracks)} Selected Track{'s' if len(tracks) != 1 else ''} from Playlist"
             button_color = "#e74c3c"  # Red
-
-        if not tracks:
-            return
 
         # Update button
         self.individual_action_button.setText(action_text)
@@ -958,8 +1163,15 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
             )
             self.add_tracks_button.setEnabled(True)
 
+            # Create playlist header
+            playlist_header = QTreeWidgetItem([f"📁 {self.playlist_name_edit.text()} ({artist_display}) - {len(missing_tracks)} missing tracks"])
+            self.missing_tree.addTopLevelItem(playlist_header)
+            
+            # Add missing tracks as children
             for track in missing_tracks:
-                self.missing_list.addItem(f"{track['name']} ({track['duration']})")
+                track_item = QTreeWidgetItem([f"• {track['name']} ({track['duration']}) - {track.get('album', 'Unknown Album')}"])
+                track_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "track", "track_data": track, "playlist": self.playlist_name_edit.text()})
+                playlist_header.addChild(track_item)
 
         # Update extra tracks list
         if not extra_tracks:
@@ -967,10 +1179,20 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
         else:
             self.remove_tracks_button.setEnabled(True)
 
-        for track in extra_tracks:
-            self.extra_list.addItem(
-                f"{track['name']} by {track['main_artist']} ({track['duration']})"
-            )
+        # Create playlist header for extra tracks
+        if extra_tracks:
+            playlist_header = QTreeWidgetItem([f"📁 {self.playlist_name_edit.text()} ({artist_display}) - {len(extra_tracks)} extra tracks"])
+            self.extra_tree.addTopLevelItem(playlist_header)
+            
+            # Add extra tracks as children
+            for track in extra_tracks:
+                track_item = QTreeWidgetItem([f"• {track['name']} by {track.get('main_artist', 'Unknown')} ({track['duration']})"])
+                track_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "track", "track_data": track, "playlist": self.playlist_name_edit.text()})
+                playlist_header.addChild(track_item)
+
+        # Expand all items in both trees for single playlist analysis
+        self.missing_tree.expandAll()
+        self.extra_tree.expandAll()
 
         # Store data
         self.missing_tracks_data = missing_tracks
@@ -1018,7 +1240,15 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
             for index in sorted(self.selected_track_indices, reverse=True):
                 if 0 <= index < len(self.missing_tracks_data):
                     self.missing_tracks_data.pop(index)
-                    self.missing_list.takeItem(index)
+                    # Find the item in the tree widget and remove it
+                    for i in range(self.missing_tree.topLevelItemCount()): # Changed to missing_tree
+                        item = self.missing_tree.topLevelItem(i)
+                        if item.text(0).startswith(f"📁 {self.playlist_name_edit.text()} ({self.playlist_name_edit.text().split('/')[-1]}) -"):
+                            for j in range(item.childCount()):
+                                if item.child(j).text(0).startswith(f"  • {self.missing_tracks_data[index]['name']} ({self.missing_tracks_data[index]['duration']}) - {self.missing_tracks_data[index]['album']}"): # Changed to missing_tree
+                                    self.missing_tree.takeTopLevelItem(i).takeChild(j) # Changed to missing_tree
+                                    break
+                            break
 
             # Clear details and disable button
             self.details_text.clear()
@@ -1056,7 +1286,15 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
             for index in sorted(self.selected_track_indices, reverse=True):
                 if 0 <= index < len(self.extra_tracks_data):
                     self.extra_tracks_data.pop(index)
-                    self.extra_list.takeItem(index)
+                    # Find the item in the tree widget and remove it
+                    for i in range(self.extra_tree.topLevelItemCount()):
+                        item = self.extra_tree.topLevelItem(i)
+                        if item.text(0).startswith(f"📁 {self.playlist_name_edit.text()} ({self.playlist_name_edit.text().split('/')[-1]}) -"):
+                            for j in range(item.childCount()):
+                                if item.child(j).text(0).startswith(f"  • {self.extra_tracks_data[index]['name']} by {self.extra_tracks_data[index]['main_artist']} ({self.extra_tracks_data[index]['duration']})"):
+                                    self.extra_tree.takeTopLevelItem(i).takeChild(j)
+                                    break
+                            break
 
             # Clear details and disable button
             self.details_text.clear()
@@ -1093,7 +1331,7 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
             self.remove_tracks_button.setEnabled(False)
             self.status_label.setText("✅ Non-artist tracks removed successfully!")
             # Clear the extra tracks list since they've been removed
-            self.extra_list.clear()
+            self.extra_tree.clear()
             self.details_text.clear()
             self.extra_tracks_data = []
             QMessageBox.information(self, "Success", message)
@@ -1115,7 +1353,7 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
             self.add_tracks_button.setEnabled(False)
             self.status_label.setText("✅ Tracks added successfully!")
             # Clear the missing tracks list since they've been added
-            self.missing_list.clear()
+            self.missing_tree.clear() # Changed to missing_tree
             self.details_text.clear()
             self.missing_tracks_data = []
             QMessageBox.information(self, "Success", message)
