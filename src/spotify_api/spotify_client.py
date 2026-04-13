@@ -47,6 +47,24 @@ class SpotifyPlaylistUpdater:
             Dict[str, Any], self._call_spotify(self.sp.current_user) or {}
         )
 
+    def close(self) -> None:
+        """Release the underlying Spotipy client (best-effort)."""
+        self._cleanup()
+
+    def _cleanup(self) -> None:
+        """
+        Backwards-compatible cleanup hook.
+
+        Older parts of the app call `_cleanup()` explicitly. Spotipy doesn't require
+        explicit closing, but we null out references to help GC and avoid shutdown
+        edge-cases.
+        """
+        try:
+            if hasattr(self, "sp"):
+                del self.sp
+        except Exception:
+            logger.exception("Error cleaning up Spotify client")
+
     def _call_spotify(
         self,
         fn: Callable[..., Any],
