@@ -3,6 +3,7 @@ Main entry point for CLI interface
 """
 
 import argparse
+import logging
 import sys
 
 from src.spotify_api.spotify_client import SpotifyPlaylistUpdater
@@ -10,6 +11,12 @@ from src.spotify_api.spotify_client import SpotifyPlaylistUpdater
 
 def main():
     """CLI entry point for Spotify Playlist Updater"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
     parser = argparse.ArgumentParser(
         description="Compare artist discography with playlist"
     )
