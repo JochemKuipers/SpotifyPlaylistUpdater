@@ -1,0 +1,11 @@
+[project]
+name = "spotifyplaylistupdater"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pyside6>=6.11.0",
+    "pyside6-stubs>=6.7.3.0",
+    "spotipy>=2.26.0",
+]
