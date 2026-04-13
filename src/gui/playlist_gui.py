@@ -242,6 +242,74 @@ class AllPlaylistsWorker(QThread):
             self.error.emit(f"Error: {str(e)}")
 
 
+class AllPlaylistsActionWorker(QThread):
+    """Worker thread for bulk add/remove actions across many playlists."""
+
+    progress_update = Signal(str)
+    finished = Signal(bool, str)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        client_id,
+        client_secret,
+        redirect_uri,
+        *,
+        operation: str,
+        tracks_by_playlist: dict,
+    ):
+        super().__init__()
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uri = redirect_uri
+        self.operation = operation  # "add" | "remove"
+        self.tracks_by_playlist = tracks_by_playlist
+
+    def run(self):
+        try:
+            self.progress_update.emit("Connecting to Spotify...")
+            manager = SpotifyManager()
+            updater = manager.get_client(
+                self.client_id, self.client_secret, self.redirect_uri
+            )
+
+            playlists = updater.get_user_playlists()
+            id_map = {p["name"].strip().lower(): p["id"] for p in playlists if p.get("name") and p.get("id")}
+
+            total_playlists = len(self.tracks_by_playlist)
+            total_tracks = sum(len(v) for v in self.tracks_by_playlist.values())
+            processed_tracks = 0
+
+            for idx, (playlist_name, tracks) in enumerate(self.tracks_by_playlist.items(), 1):
+                pid = id_map.get(str(playlist_name).strip().lower())
+                if not pid:
+                    self.progress_update.emit(f"Skipping '{playlist_name}' (playlist not found)")
+                    continue
+                if not tracks:
+                    continue
+
+                self.progress_update.emit(
+                    f"{self.operation.title()} {len(tracks)} tracks in {idx}/{total_playlists}: {playlist_name}"
+                )
+                if self.operation == "add":
+                    ok = updater.add_tracks_to_playlist_id(pid, tracks)
+                else:
+                    ok = updater.remove_tracks_from_playlist_id(pid, tracks)
+
+                if not ok:
+                    self.error.emit(f"Failed to {self.operation} tracks for playlist: {playlist_name}")
+                    return
+
+                processed_tracks += len(tracks)
+                self.progress_update.emit(
+                    f"Progress: {processed_tracks}/{total_tracks} tracks processed"
+                )
+
+            self.finished.emit(True, f"Done. Processed {processed_tracks}/{total_tracks} tracks.")
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class SpotifyPlaylistGUI(QMainWindow):
     """Main GUI class for Spotify Playlist Updater"""
 
@@ -689,6 +757,8 @@ class SpotifyPlaylistGUI(QMainWindow):
         
         # Store the all playlists results for later use
         self.all_playlists_results = results
+        self.all_missing_by_playlist = {}
+        self.all_extra_by_playlist = {}
         
         # Display results grouped by playlist in collapsible trees
         self.missing_tree.clear()
@@ -707,6 +777,11 @@ class SpotifyPlaylistGUI(QMainWindow):
             missing_tracks = playlist_data.get("missing", [])
             extra_tracks = playlist_data.get("extra", [])
             artist_name = playlist_data.get("artist_name", "Unknown")
+
+            if missing_tracks:
+                self.all_missing_by_playlist[playlist_name] = missing_tracks
+            if extra_tracks:
+                self.all_extra_by_playlist[playlist_name] = extra_tracks
             
             # Create missing tracks playlist group
             if missing_tracks:
@@ -1054,6 +1129,39 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
 
     def add_missing_tracks(self):
         """Add all missing tracks to the playlist"""
+        # All-playlists mode
+        if hasattr(self, "all_missing_by_playlist") and self.all_missing_by_playlist:
+            total_tracks = sum(len(v) for v in self.all_missing_by_playlist.values())
+            reply = QMessageBox.question(
+                self,
+                "Confirm Addition",
+                f"Add {total_tracks} missing tracks across {len(self.all_missing_by_playlist)} playlists?\n\nThis may take a while.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            self.analyze_button.setEnabled(False)
+            self.analyze_all_button.setEnabled(False)
+            self.add_tracks_button.setEnabled(False)
+            self.remove_tracks_button.setEnabled(False)
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, 0)
+
+            self.all_action_worker = AllPlaylistsActionWorker(
+                self.client_id_edit.text(),
+                self.client_secret_edit.text(),
+                self.redirect_uri_edit.text(),
+                operation="add",
+                tracks_by_playlist=self.all_missing_by_playlist,
+            )
+            self.all_action_worker.progress_update.connect(self.update_status)
+            self.all_action_worker.finished.connect(self.all_action_finished)
+            self.all_action_worker.error.connect(self.all_action_error)
+            self.all_action_worker.start()
+            return
+
+        # Single-playlist mode
         if not self.missing_tracks_data:
             QMessageBox.warning(self, "Warning", "No missing tracks to add!")
             return
@@ -1093,6 +1201,39 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
 
     def remove_non_artist_tracks(self):
         """Remove all non-artist tracks from the playlist"""
+        # All-playlists mode
+        if hasattr(self, "all_extra_by_playlist") and self.all_extra_by_playlist:
+            total_tracks = sum(len(v) for v in self.all_extra_by_playlist.values())
+            reply = QMessageBox.question(
+                self,
+                "Confirm Removal",
+                f"Remove {total_tracks} non-artist tracks across {len(self.all_extra_by_playlist)} playlists?\n\nThis action cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            self.analyze_button.setEnabled(False)
+            self.analyze_all_button.setEnabled(False)
+            self.add_tracks_button.setEnabled(False)
+            self.remove_tracks_button.setEnabled(False)
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, 0)
+
+            self.all_action_worker = AllPlaylistsActionWorker(
+                self.client_id_edit.text(),
+                self.client_secret_edit.text(),
+                self.redirect_uri_edit.text(),
+                operation="remove",
+                tracks_by_playlist=self.all_extra_by_playlist,
+            )
+            self.all_action_worker.progress_update.connect(self.update_status)
+            self.all_action_worker.finished.connect(self.all_action_finished)
+            self.all_action_worker.error.connect(self.all_action_error)
+            self.all_action_worker.start()
+            return
+
+        # Single-playlist mode
         if not self.extra_tracks_data:
             QMessageBox.warning(self, "Warning", "No non-artist tracks to remove!")
             return
@@ -1130,6 +1271,20 @@ SELECTED NON-ARTIST TRACKS ({len(tracks)} tracks):
         self.worker.tracks_removed.connect(self.tracks_removed_finished)
         self.worker.error.connect(self.analysis_error)
         self.worker.start()
+
+    def all_action_finished(self, success: bool, message: str):
+        self.progress_bar.setVisible(False)
+        self.analyze_button.setEnabled(True)
+        self.analyze_all_button.setEnabled(True)
+        self.status_label.setText("✅ Bulk operation complete")
+        QMessageBox.information(self, "Done", message)
+
+    def all_action_error(self, error_message: str):
+        self.progress_bar.setVisible(False)
+        self.analyze_button.setEnabled(True)
+        self.analyze_all_button.setEnabled(True)
+        self.status_label.setText("❌ Bulk operation failed")
+        QMessageBox.critical(self, "Error", error_message)
 
     def update_status(self, message):
         """Update status label"""
