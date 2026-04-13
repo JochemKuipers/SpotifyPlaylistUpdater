@@ -226,20 +226,53 @@ class SpotifyPlaylistUpdater:
 
             logger.info(f"Fetching {total} tracks from playlist")
             tracklist = []
+            skipped_missing_track = 0
+            skipped_unusable_id = 0
+            skipped_unplayable = 0
+            skipped_local = 0
 
             for item in self._iter_paged(result):
                 track = (item or {}).get("track")
-                if not track:
+                if not isinstance(track, dict) or not track:
+                    skipped_missing_track += 1
+                    continue
+
+                # Playlist items can include entries that are not usable for follow-up API calls:
+                # - unplayable tracks (e.g. regional restrictions) often have missing/None ids
+                # - local files have no Spotify id/uri
+                # - some entries may be malformed/null
+                is_local = bool((item or {}).get("is_local")) or bool(track.get("is_local"))
+                if is_local:
+                    skipped_local += 1
+                    continue
+
+                # `is_playable` may be absent; only treat explicit False as unplayable.
+                if track.get("is_playable") is False:
+                    skipped_unplayable += 1
+                    continue
+
+                uri = track.get("uri")
+                track_id = track.get("id")
+                if not uri or not track_id:
+                    skipped_unusable_id += 1
                     continue
                 tracklist.append(
                     {
                         "name": clean_name(track.get("name") or ""),
                         "duration": format_duration(int(track.get("duration_ms") or 0)),
                         "artists": list(track.get("artists") or []),
-                        "uri": track.get("uri"),
+                        "uri": uri,
                     }
                 )
 
+            if skipped_missing_track or skipped_unusable_id or skipped_unplayable or skipped_local:
+                logger.info(
+                    "Skipped playlist items (missing=%s, unusable_id=%s, unplayable=%s, local=%s)",
+                    skipped_missing_track,
+                    skipped_unusable_id,
+                    skipped_unplayable,
+                    skipped_local,
+                )
             logger.info("Found %s tracks in playlist '%s'", len(tracklist), matched_name)
             return tracklist
 
@@ -332,7 +365,11 @@ class SpotifyPlaylistUpdater:
             return []
 
         # Process tracks in parallel batches
-        track_ids = [track["uri"].split(":")[-1] for track in playlist_tracks]
+        track_ids = [
+            t["uri"].split(":")[-1]
+            for t in playlist_tracks
+            if isinstance(t, dict) and t.get("uri") and str(t["uri"]).startswith("spotify:track:")
+        ]
         batch_size = 50  # Spotify allows up to 50 tracks per request
         num_batches = ceil(len(track_ids) / batch_size)
 
@@ -396,7 +433,11 @@ class SpotifyPlaylistUpdater:
             return []
 
         # Process tracks in parallel batches with optimized batching
-        track_ids = [track["uri"].split(":")[-1] for track in playlist_tracks]
+        track_ids = [
+            t["uri"].split(":")[-1]
+            for t in playlist_tracks
+            if isinstance(t, dict) and t.get("uri") and str(t["uri"]).startswith("spotify:track:")
+        ]
         batch_size = 50  # Spotify allows up to 50 tracks per request
         num_batches = ceil(len(track_ids) / batch_size)
 
