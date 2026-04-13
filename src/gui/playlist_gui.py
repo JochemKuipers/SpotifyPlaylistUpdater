@@ -182,6 +182,9 @@ class SpotifyWorker(QThread):
         )
 
         success = updater.add_tracks_to_playlist(self.playlist_name, self.tracks_to_add)
+        if success:
+            self.progress_update.emit("Saving added tracks to your library...")
+            updater.add_tracks_to_saved_tracks(self.tracks_to_add)
 
         if success:
             self.tracks_added.emit(
@@ -293,6 +296,8 @@ class AllPlaylistsActionWorker(QThread):
                 )
                 if self.operation == "add":
                     ok = updater.add_tracks_to_playlist_id(pid, tracks)
+                    if ok:
+                        updater.add_tracks_to_saved_tracks(tracks)
                 else:
                     ok = updater.remove_tracks_from_playlist_id(pid, tracks)
 

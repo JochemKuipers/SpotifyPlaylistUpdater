@@ -33,7 +33,7 @@ class SpotifyPlaylistUpdater:
         redirect_uri: str,
         *,
         enable_concurrency: bool = True,
-        max_workers: int = 4,
+        max_workers: int = 3,
     ):
         """Initialize Spotify client with OAuth"""
         scope = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-read-private user-read-email"
@@ -1118,7 +1118,6 @@ class SpotifyPlaylistUpdater:
         if not tracks:
             logger.warning("No tracks to add")
             return False
-
         try:
             track_uris = [track["uri"] for track in tracks if track and track.get("uri")]
             added_count = 0
@@ -1140,6 +1139,36 @@ class SpotifyPlaylistUpdater:
             return True
         except Exception:
             logger.exception("Error adding tracks to playlist_id=%s", playlist_id)
+            return False
+
+    def add_tracks_to_saved_tracks(self, tracks: List[Dict]) -> bool:
+        """Add the given tracks to the user's Saved Tracks library."""
+        if not tracks:
+            logger.warning("No tracks to save")
+            return False
+
+        track_ids: List[str] = []
+        for t in tracks:
+            if not t or not t.get("uri"):
+                continue
+            uri = str(t["uri"])
+            if uri.startswith("spotify:track:"):
+                track_ids.append(uri.split(":")[-1])
+
+        if not track_ids:
+            logger.warning("No valid Spotify track IDs to save")
+            return False
+
+        try:
+            saved = 0
+            for i in range(0, len(track_ids), 50):
+                batch = track_ids[i : i + 50]
+                self._call_spotify(self.sp.current_user_saved_tracks_add, batch)
+                saved += len(batch)
+            logger.info("Saved %s tracks to user's library", saved)
+            return True
+        except Exception:
+            logger.exception("Error saving tracks to user's library")
             return False
 
     def analyze_all_playlists(self) -> Dict:
